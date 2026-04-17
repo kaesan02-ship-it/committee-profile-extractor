@@ -4,9 +4,31 @@ import { useDropzone } from 'react-dropzone';
 import * as XLSX from 'xlsx';
 import { EMPTY_VALUE, parsePptxProfile } from './lib/pptProfileParser';
 
+const normalizeRelativePath = (relativePath = '', fallbackName = '') => {
+  const normalized = String(relativePath || '').replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
+  return normalized || fallbackName;
+};
+
+const getSourceFolder = (relativePath = '', fallbackLabel = '개별 업로드') => {
+  const segments = normalizeRelativePath(relativePath).split('/').filter(Boolean);
+  return segments.length > 1 ? segments[segments.length - 2] : fallbackLabel;
+};
+
+const createUploadItem = (file, relativePath = '') => {
+  const sourceRelativePath = normalizeRelativePath(relativePath || file.webkitRelativePath, file.name);
+
+  return {
+    file,
+    sourceFolder: getSourceFolder(sourceRelativePath),
+    sourceRelativePath,
+  };
+};
+
 const buildWorkbook = (files, results) => {
   const masterRows = results.map((row) => ({
     파일명: row.fileName,
+    원본폴더: row.sourceFolder,
+    원본상대경로: row.sourceRelativePath,
     '위원 성명': row.name,
     성별: row.gender,
     출생년월일: row.birth,
@@ -21,6 +43,8 @@ const buildWorkbook = (files, results) => {
 
   const rawRows = results.map((row) => ({
     파일명: row.fileName,
+    원본폴더: row.sourceFolder,
+    원본상대경로: row.sourceRelativePath,
     성명: row.name,
     학력원문: row.educationRaw,
     경력원문: row.career,
@@ -55,7 +79,7 @@ function App() {
 
     for (const file of acceptedFiles) {
       if (file.name.endsWith('.pptx') && !file.name.startsWith('~$')) {
-        collected.push(file);
+        collected.push(createUploadItem(file, file.webkitRelativePath || file.name));
         continue;
       }
 
@@ -67,11 +91,10 @@ function App() {
 
         for (const name of pptxNames) {
           const blob = await zip.file(name).async('blob');
-          collected.push(
-            new File([blob], name.split('/').pop(), {
-              type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-            })
-          );
+          const extractedFile = new File([blob], name.split('/').pop(), {
+            type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          });
+          collected.push(createUploadItem(extractedFile, `${file.name.replace(/\.zip$/i, '')}/${name}`));
         }
       }
     }
@@ -95,8 +118,13 @@ function App() {
     const nextResults = [];
     for (let i = 0; i < files.length; i += 1) {
       setCurrentIdx(i);
-      const parsed = await parsePptxProfile(files[i]);
-      nextResults.push(parsed);
+      const upload = files[i];
+      const parsed = await parsePptxProfile(upload.file);
+      nextResults.push({
+        ...parsed,
+        sourceFolder: upload.sourceFolder,
+        sourceRelativePath: upload.sourceRelativePath,
+      });
       setResults([...nextResults]);
       setProgress(Math.round(((i + 1) / files.length) * 100));
     }
@@ -142,7 +170,7 @@ function App() {
 
       <div className="guide-box">
         <strong>현재 추출 컬럼</strong><br />
-        위원 성명 / 성별 / 출생년월일 / 현소속 / 연락처 / 이메일주소 / 최종학력 / 전문분야 / 경력
+        위원 성명 / 성별 / 출생년월일 / 현소속 / 연락처 / 이메일주소 / 최종학력 / 전문분야 / 경력 / 원본폴더 / 원본상대경로
         <br /><br />
         <strong>샘플 PPT 기준 추가 튜닝 포인트</strong><br />
         src/lib/extractionRules.js 에서 라벨 별칭, 섹션 종료 헤더, 현소속 키워드를 조정하면 됩니다.
@@ -177,7 +205,8 @@ function App() {
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📄</div>
           <h3 style={{ marginBottom: '0.75rem' }}>PPTX 또는 ZIP 파일을 드래그해서 올려주세요</h3>
           <p style={{ color: 'var(--text-muted)', lineHeight: 1.7 }}>
-            ZIP 내부의 PPTX도 자동 분리합니다. 임시 파일(~$)은 제외합니다.
+            ZIP 내부의 PPTX도 자동 분리합니다. 폴더 선택 업로드 시 원본폴더와 원본상대경로를 함께 기록합니다.
+            임시 파일(~$)은 제외합니다.
           </p>
         </div>
       </div>
@@ -200,13 +229,18 @@ function App() {
           </div>
 
           <div className="file-list">
-            {files.map((file, index) => {
+            {files.map((upload, index) => {
               const status = index < results.length ? (results[index]?.error ? '오류' : '완료') : index === currentIdx ? '처리중' : '대기';
               const statusClass = index < results.length ? (results[index]?.error ? 'status-error' : 'status-success') : 'status-pending';
 
               return (
-                <div className="file-item" key={`${file.name}-${index}`}>
-                  <span>{file.name}</span>
+                <div className="file-item" key={`${upload.sourceRelativePath}-${index}`}>
+                  <div>
+                    <div>{upload.file.name}</div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+                      {upload.sourceFolder} · {upload.sourceRelativePath}
+                    </div>
+                  </div>
                   <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
                     <span className={`status-badge ${statusClass}`}>{status}</span>
                     {!isProcessing && (
@@ -239,7 +273,7 @@ function App() {
           {isProcessing && (
             <div className="progress-wrap">
               <div style={{ marginBottom: '0.5rem', color: 'var(--text-muted)' }}>
-                {currentIdx + 1} / {files.length} · {files[currentIdx]?.name || '분석 중'}
+                {currentIdx + 1} / {files.length} · {files[currentIdx]?.file?.name || '분석 중'}
               </div>
               <div className="progress-bar-container">
                 <div className="progress-bar" style={{ width: `${progress}%` }} />
@@ -252,6 +286,8 @@ function App() {
               <table>
                 <thead>
                   <tr>
+                    <th>원본폴더</th>
+                    <th>원본상대경로</th>
                     <th>성명</th>
                     <th>성별</th>
                     <th>출생년월일</th>
@@ -264,6 +300,8 @@ function App() {
                 <tbody>
                   {results.map((row, index) => (
                     <tr key={`${row.fileName}-${index}`}>
+                      <td>{row.sourceFolder || EMPTY_VALUE}</td>
+                      <td style={{ minWidth: '220px' }}>{row.sourceRelativePath || EMPTY_VALUE}</td>
                       <td>{row.name || EMPTY_VALUE}</td>
                       <td>{row.gender || EMPTY_VALUE}</td>
                       <td>{row.birth || EMPTY_VALUE}</td>
