@@ -1,11 +1,12 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import JSZip from 'jszip';
 import { useDropzone } from 'react-dropzone';
-import * as XLSX from 'xlsx';
 import { EMPTY_VALUE, parsePptxProfile } from './lib/pptProfileParser';
 
 const normalizeRelativePath = (relativePath = '', fallbackName = '') => {
-  const normalized = String(relativePath || '').replaceAll('\\', '/').replace(/^\/+|\/+$/g, '');
+  const normalized = String(relativePath || '')
+    .replaceAll('\\', '/')
+    .replace(/^\/+|\/+$/g, '');
   return normalized || fallbackName;
 };
 
@@ -24,50 +25,239 @@ const createUploadItem = (file, relativePath = '') => {
   };
 };
 
-const buildWorkbook = (files, results) => {
-  const masterRows = results.map((row) => ({
-    파일명: row.fileName,
-    원본폴더: row.sourceFolder,
-    원본상대경로: row.sourceRelativePath,
-    '위원 성명': row.name,
-    성별: row.gender,
-    출생년월일: row.birth,
-    연령: row.age,
-    현소속: row.affiliation,
-    연락처: row.phone,
-    이메일주소: row.email,
-    최종학력: row.education,
-    전문분야: row.expertise,
-    경력: row.career,
-  }));
+const normalizeText = (value = '') => {
+  const text = String(value ?? '').trim();
+  return text && text !== EMPTY_VALUE ? text : EMPTY_VALUE;
+};
 
-  const rawRows = results.map((row) => ({
-    파일명: row.fileName,
-    원본폴더: row.sourceFolder,
-    원본상대경로: row.sourceRelativePath,
-    성명: row.name,
-    학력원문: row.educationRaw,
-    경력원문: row.career,
-  }));
+const normalizeMultiline = (value = '') => {
+  const text = normalizeText(value);
+  if (text === EMPTY_VALUE) return EMPTY_VALUE;
+  return text
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n');
+};
 
-  const summaryRows = [
-    { 항목: '총 파일 수', 값: files.length },
-    { 항목: '정상 추출 수', 값: results.filter((row) => !row.error).length },
-    { 항목: '오류 수', 값: results.filter((row) => row.error).length },
-    { 항목: '생성일시', 값: new Date().toLocaleString('ko-KR') },
+const bulletizeMultiline = (value = '') => {
+  const text = normalizeMultiline(value);
+  if (text === EMPTY_VALUE) return EMPTY_VALUE;
+  return text
+    .split(/\n+/)
+    .map((line) => `• ${line}`)
+    .join('\n');
+};
+
+const getLineCount = (...values) => {
+  return Math.max(
+    1,
+    ...values.map((value) => String(value ?? '').split(/\n+/).filter(Boolean).length || 1)
+  );
+};
+
+const createStamp = () => {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  const hh = String(now.getHours()).padStart(2, '0');
+  const mi = String(now.getMinutes()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}_${hh}${mi}`;
+};
+
+const applySheetStyle = (worksheet, options = {}) => {
+  const {
+    frozenColumns = 0,
+    headerColor = '1F4E78',
+  } = options;
+
+  worksheet.views = [{ state: 'frozen', xSplit: frozenColumns, ySplit: 1 }];
+  worksheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: worksheet.columnCount },
+  };
+
+  const headerRow = worksheet.getRow(1);
+  headerRow.height = 26;
+  headerRow.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: headerColor },
+    };
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFD8E1EB' } },
+      left: { style: 'thin', color: { argb: 'FFD8E1EB' } },
+      right: { style: 'thin', color: { argb: 'FFD8E1EB' } },
+      bottom: { style: 'thin', color: { argb: 'FF9AA9B8' } },
+    };
+  });
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return;
+
+    const isError = String(row.getCell(1).value || '').includes('오류');
+    const fillColor = isError
+      ? 'FFFDECEA'
+      : rowNumber % 2 === 0
+        ? 'FFF8FBFF'
+        : 'FFFFFFFF';
+
+    row.eachCell((cell) => {
+      cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: fillColor },
+      };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE5ECF3' } },
+        left: { style: 'thin', color: { argb: 'FFE5ECF3' } },
+        right: { style: 'thin', color: { argb: 'FFE5ECF3' } },
+        bottom: { style: 'thin', color: { argb: 'FFE5ECF3' } },
+      };
+    });
+  });
+};
+
+const buildWorkbook = async (files, results) => {
+  const ExcelJSModule = await import('exceljs');
+  const ExcelJS = ExcelJSModule.default;
+  const workbook = new ExcelJS.Workbook();
+
+  workbook.creator = 'committee-profile-extractor';
+  workbook.created = new Date();
+  workbook.modified = new Date();
+
+  const dbSheet = workbook.addWorksheet('1.위원DB');
+  dbSheet.columns = [
+    { header: '상태', key: 'status', width: 10 },
+    { header: '파일명', key: 'fileName', width: 28 },
+    { header: '원본폴더', key: 'sourceFolder', width: 20 },
+    { header: '원본상대경로', key: 'sourceRelativePath', width: 42 },
+    { header: '위원 성명', key: 'name', width: 14 },
+    { header: '성별', key: 'gender', width: 10 },
+    { header: '출생년월일', key: 'birth', width: 16 },
+    { header: '연령', key: 'age', width: 10 },
+    { header: '현소속', key: 'affiliation', width: 28 },
+    { header: '연락처', key: 'phone', width: 18 },
+    { header: '이메일주소', key: 'email', width: 28 },
+    { header: '최종학력', key: 'education', width: 28 },
+    { header: '학력상세', key: 'educationDetails', width: 42 },
+    { header: '전문분야', key: 'expertise', width: 34 },
+    { header: '경력요약', key: 'career', width: 38 },
+    { header: '경력상세', key: 'careerDetails', width: 44 },
   ];
 
-  const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(masterRows), '1.위원DB');
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rawRows), '2.원문정리');
-  XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summaryRows), '3.요약');
+  results.forEach((row) => {
+    const inserted = dbSheet.addRow({
+      status: row.error ? '오류' : '정상',
+      fileName: normalizeText(row.fileName),
+      sourceFolder: normalizeText(row.sourceFolder),
+      sourceRelativePath: normalizeText(row.sourceRelativePath),
+      name: normalizeText(row.name),
+      gender: normalizeText(row.gender),
+      birth: normalizeText(row.birth),
+      age: normalizeText(row.age),
+      affiliation: normalizeText(row.affiliation),
+      phone: normalizeText(row.phone),
+      email: normalizeText(row.email),
+      education: normalizeText(row.education),
+      educationDetails: bulletizeMultiline(row.educationDetails),
+      expertise: normalizeText(row.expertise),
+      career: bulletizeMultiline(row.career),
+      careerDetails: bulletizeMultiline(row.careerDetails),
+    });
+
+    inserted.height = Math.min(
+      180,
+      22 + (getLineCount(inserted.getCell('educationDetails').value, inserted.getCell('careerDetails').value) - 1) * 16
+    );
+  });
+
+  applySheetStyle(dbSheet, { frozenColumns: 4, headerColor: '1F4E78' });
+
+  const detailSheet = workbook.addWorksheet('2.원문정리');
+  detailSheet.columns = [
+    { header: '상태', key: 'status', width: 10 },
+    { header: '파일명', key: 'fileName', width: 28 },
+    { header: '성명', key: 'name', width: 14 },
+    { header: '학력 원문', key: 'educationRaw', width: 44 },
+    { header: '학력 정리', key: 'educationDetails', width: 42 },
+    { header: '경력 원문', key: 'careerRaw', width: 48 },
+    { header: '경력 정리', key: 'careerDetails', width: 44 },
+  ];
+
+  results.forEach((row) => {
+    const inserted = detailSheet.addRow({
+      status: row.error ? '오류' : '정상',
+      fileName: normalizeText(row.fileName),
+      name: normalizeText(row.name),
+      educationRaw: normalizeMultiline(row.educationRaw),
+      educationDetails: bulletizeMultiline(row.educationDetails),
+      careerRaw: normalizeMultiline(row.careerRaw),
+      careerDetails: bulletizeMultiline(row.careerDetails),
+    });
+
+    inserted.height = Math.min(
+      220,
+      24 + (getLineCount(
+        inserted.getCell('educationRaw').value,
+        inserted.getCell('educationDetails').value,
+        inserted.getCell('careerRaw').value,
+        inserted.getCell('careerDetails').value,
+      ) - 1) * 16
+    );
+  });
+
+  applySheetStyle(detailSheet, { frozenColumns: 3, headerColor: '2F6B3C' });
+
+  const summarySheet = workbook.addWorksheet('3.요약');
+  summarySheet.columns = [
+    { header: '항목', key: 'label', width: 24 },
+    { header: '값', key: 'value', width: 42 },
+  ];
+
+  const summaryRows = [
+    { label: '총 파일 수', value: files.length },
+    { label: '정상 추출 수', value: results.filter((row) => !row.error).length },
+    { label: '오류 수', value: results.filter((row) => row.error).length },
+    { label: '생성일시', value: new Date().toLocaleString('ko-KR') },
+    { label: '서식 메모', value: '학력상세/경력상세는 줄바꿈 + 글머리표로 저장됩니다.' },
+  ];
+
+  summaryRows.forEach((item) => summarySheet.addRow(item));
+  applySheetStyle(summarySheet, { frozenColumns: 1, headerColor: '7A4A00' });
+
   return workbook;
+};
+
+const downloadWorkbook = async (files, results) => {
+  const workbook = await buildWorkbook(files, results);
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob(
+    [buffer],
+    { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }
+  );
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `위원_프로필_DB_${createStamp()}.xlsx`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 };
 
 function App() {
   const [files, setFiles] = useState([]);
   const [results, setResults] = useState([]);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
   const [currentIdx, setCurrentIdx] = useState(-1);
   const [progress, setProgress] = useState(0);
 
@@ -116,15 +306,18 @@ function App() {
     setProgress(0);
 
     const nextResults = [];
+
     for (let i = 0; i < files.length; i += 1) {
       setCurrentIdx(i);
       const upload = files[i];
       const parsed = await parsePptxProfile(upload.file);
+
       nextResults.push({
         ...parsed,
         sourceFolder: upload.sourceFolder,
         sourceRelativePath: upload.sourceRelativePath,
       });
+
       setResults([...nextResults]);
       setProgress(Math.round(((i + 1) / files.length) * 100));
     }
@@ -132,10 +325,15 @@ function App() {
     setIsProcessing(false);
   };
 
-  const handleDownload = () => {
-    const workbook = buildWorkbook(files, results);
-    const stamp = new Date().toLocaleDateString('ko-KR').replace(/\. /g, '').replace(/\./g, '-');
-    XLSX.writeFile(workbook, `위원_프로필_DB_${stamp}.xlsx`);
+  const handleDownload = async () => {
+    if (!results.length) return;
+
+    setIsDownloading(true);
+    try {
+      await downloadWorkbook(files, results);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   const removeFile = (targetIndex) => {
@@ -149,6 +347,7 @@ function App() {
     setProgress(0);
     setCurrentIdx(-1);
     setIsProcessing(false);
+    setIsDownloading(false);
   };
 
   const stats = useMemo(() => ({
@@ -162,18 +361,14 @@ function App() {
       <div className="header">
         <h1>위원 프로필 PPTX → Excel 추출기</h1>
         <p>
-          원본 프로젝트는 React + Vite 기반으로 PPTX 슬라이드 XML을 직접 읽어 성명, 생년월일, 연락처,
-          이메일, 학력, 경력을 추출하는 구조입니다. 이번 버전은 별도 리포지토리 운영을 전제로
-          현소속·최종학력·전문분야까지 확장하고 튜닝 포인트를 분리했습니다.
+          학력은 학사·석사·박사 단위로 줄바꿈해 정리하고, 경력도 항목별 줄바꿈으로 내려받을 수 있도록
+          엑셀 저장 형식을 개선한 버전입니다.
         </p>
       </div>
 
       <div className="guide-box">
-        <strong>현재 추출 컬럼</strong><br />
-        위원 성명 / 성별 / 출생년월일 / 현소속 / 연락처 / 이메일주소 / 최종학력 / 전문분야 / 경력 / 원본폴더 / 원본상대경로
-        <br /><br />
-        <strong>샘플 PPT 기준 추가 튜닝 포인트</strong><br />
-        src/lib/extractionRules.js 에서 라벨 별칭, 섹션 종료 헤더, 현소속 키워드를 조정하면 됩니다.
+        <strong>이번 저장 형식 개선</strong><br />
+        학력상세 / 경력상세 컬럼을 추가하고, 엑셀에서 줄바꿈·열너비·헤더색·필터·상단 고정을 적용합니다.
       </div>
 
       <div className="upload-options">
@@ -230,8 +425,14 @@ function App() {
 
           <div className="file-list">
             {files.map((upload, index) => {
-              const status = index < results.length ? (results[index]?.error ? '오류' : '완료') : index === currentIdx ? '처리중' : '대기';
-              const statusClass = index < results.length ? (results[index]?.error ? 'status-error' : 'status-success') : 'status-pending';
+              const status = index < results.length
+                ? (results[index]?.error ? '오류' : '완료')
+                : index === currentIdx
+                  ? '처리중'
+                  : '대기';
+              const statusClass = index < results.length
+                ? (results[index]?.error ? 'status-error' : 'status-success')
+                : 'status-pending';
 
               return (
                 <div className="file-item" key={`${upload.sourceRelativePath}-${index}`}>
@@ -262,10 +463,14 @@ function App() {
             <button className="btn-primary" disabled={isProcessing} onClick={startProcessing}>
               {isProcessing ? '추출 중...' : '업데이트 버전 실행'}
             </button>
-            <button className="btn-secondary" disabled={!results.length || isProcessing} onClick={handleDownload}>
-              Excel 다운로드
+            <button
+              className="btn-secondary"
+              disabled={!results.length || isProcessing || isDownloading}
+              onClick={handleDownload}
+            >
+              {isDownloading ? 'Excel 생성 중...' : '예쁘게 Excel 다운로드'}
             </button>
-            <button className="btn-secondary" disabled={isProcessing} onClick={clearAll}>
+            <button className="btn-secondary" disabled={isProcessing || isDownloading} onClick={clearAll}>
               전체 초기화
             </button>
           </div>
@@ -289,12 +494,10 @@ function App() {
                     <th>원본폴더</th>
                     <th>원본상대경로</th>
                     <th>성명</th>
-                    <th>성별</th>
-                    <th>출생년월일</th>
                     <th>현소속</th>
                     <th>최종학력</th>
-                    <th>전문분야</th>
-                    <th>경력</th>
+                    <th>학력상세</th>
+                    <th>경력상세</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -303,12 +506,14 @@ function App() {
                       <td>{row.sourceFolder || EMPTY_VALUE}</td>
                       <td style={{ minWidth: '220px' }}>{row.sourceRelativePath || EMPTY_VALUE}</td>
                       <td>{row.name || EMPTY_VALUE}</td>
-                      <td>{row.gender || EMPTY_VALUE}</td>
-                      <td>{row.birth || EMPTY_VALUE}</td>
-                      <td>{row.affiliation || EMPTY_VALUE}</td>
-                      <td>{row.education || EMPTY_VALUE}</td>
-                      <td>{row.expertise || EMPTY_VALUE}</td>
-                      <td style={{ whiteSpace: 'pre-line', minWidth: '260px' }}>{row.career || EMPTY_VALUE}</td>
+                      <td style={{ minWidth: '220px' }}>{row.affiliation || EMPTY_VALUE}</td>
+                      <td style={{ minWidth: '220px' }}>{row.education || EMPTY_VALUE}</td>
+                      <td style={{ whiteSpace: 'pre-line', minWidth: '280px' }}>
+                        {bulletizeMultiline(row.educationDetails)}
+                      </td>
+                      <td style={{ whiteSpace: 'pre-line', minWidth: '320px' }}>
+                        {bulletizeMultiline(row.careerDetails)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
