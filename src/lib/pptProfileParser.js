@@ -301,14 +301,23 @@ const splitDegreeList = (text = '') => {
 
 const expandIntegratedDegree = (prefix = '', degree = '') => {
   const normalizedPrefix = normalizeEducationRecord(prefix).replace(/[,:;/-]\s*$/g, '').trim();
-  if (!normalizedPrefix) return [];
-  if (degree === '석박사 통합') {
+  const normalizedDegree = normalizeDegreeLabel(degree);
+
+  if (!normalizedPrefix) {
+    if (normalizedDegree === '석박사 통합') {
+      return ['석사', '박사'];
+    }
+    return normalizedDegree ? [normalizedDegree] : [];
+  }
+
+  if (normalizedDegree === '석박사 통합') {
     return [
       normalizeEducationRecord(`${normalizedPrefix} 석사`),
       normalizeEducationRecord(`${normalizedPrefix} 박사`),
     ];
   }
-  return [normalizeEducationRecord(`${normalizedPrefix} ${degree}`)];
+
+  return [normalizeEducationRecord(`${normalizedPrefix} ${normalizedDegree}`)];
 };
 
 const extractEducationContext = (line = '') => {
@@ -326,15 +335,51 @@ const extractEducationContext = (line = '') => {
   return EDUCATION_KEYWORD_PATTERN.test(prefix) ? prefix : '';
 };
 
+const isStandaloneDegreeRecord = (record = '') => {
+  const normalized = cleanInline(record)
+    .replace(/^[\s[(]+/g, '')
+    .replace(/[\s)\]]+$/g, '')
+    .replace(/\s+/g, '');
+
+  return DEGREE_ONLY_PATTERN.test(normalized);
+};
+
+const isMeaningfulEducationContext = (text = '') => {
+  const value = normalizeEducationRecord(text)
+    .replace(EDUCATION_NOISE_PATTERN, '')
+    .replace(/[,:;/-]\s*$/g, '')
+    .trim();
+
+  if (!value) return false;
+  if (isStandaloneDegreeRecord(value)) return false;
+
+  return (
+    EDUCATION_KEYWORD_PATTERN.test(value) ||
+    /(대학교|대학원|대학|교육원|University|College|School|Institute|학과|학부|전공)/i.test(value)
+  );
+};
+
 const attachContextToDegreeOnly = (record = '', context = '') => {
   if (!record) return '';
-  if (!DEGREE_ONLY_PATTERN.test(cleanInline(record).replace(/\s+/g, ''))) return normalizeEducationRecord(record);
-  return normalizeEducationRecord(context ? `${context} ${normalizeDegreeLabel(record)}` : normalizeDegreeLabel(record));
+
+  const normalizedRecord = normalizeEducationRecord(record);
+  if (!isStandaloneDegreeRecord(normalizedRecord)) {
+    return normalizedRecord;
+  }
+
+  const degreeOnly = normalizeDegreeLabel(normalizedRecord);
+  const normalizedContext = normalizeEducationRecord(context).replace(/[,:;/-]\s*$/g, '').trim();
+
+  return normalizeEducationRecord(normalizedContext ? `${normalizedContext} ${degreeOnly}` : degreeOnly);
 };
 
 const extractBracketTaggedEducation = (line = '') => {
   const degreePattern = [...EDUCATION_DEGREE_KEYWORDS, '석박사 통합'].map(escapeRegex).join('|');
-  const regex = new RegExp(`(?:^|[\\s,])(?:\\[|\\()\\s*(${degreePattern})\\s*(?:\\]|\\))\\s*([^\\[\\(]+?)(?=(?:\\s*(?:\\[|\\()\\s*(?:${degreePattern})\\s*(?:\\]|\\)))|$)`, 'gi');
+  const regex = new RegExp(
+    `(?:^|[\\s,])(?:\\[|\\()\\s*(${degreePattern})\\s*(?:\\]|\\))\\s*([^\\[\\(]+?)(?=(?:\\s*(?:\\[|\\()\\s*(?:${degreePattern})\\s*(?:\\]|\\)))|$)`,
+    'gi'
+  );
+
   const matches = Array.from(normalizeEducationRecord(line).matchAll(regex));
 
   return uniq(
@@ -353,7 +398,7 @@ const extractTaggedEducationSegments = (text = '') => {
   return uniq(
     matches
       .flatMap((match) => {
-        const body = normalizeEducationRecord(match[2]).replace(/[,:;/-]\\s*$/g, '').trim();
+        const body = normalizeEducationRecord(match[2]).replace(/[,:;/-]\s*$/g, '').trim();
         const degree = normalizeDegreeLabel(match[1]);
         return expandIntegratedDegree(body, degree);
       })
@@ -425,60 +470,187 @@ const extractDegreeAnchoredSegments = (text = '') => {
 const expandParentheticalDegrees = (line = '') => {
   const normalizedLine = normalizeEducationRecord(line);
   const degreePattern = [...EDUCATION_DEGREE_KEYWORDS, '석박사 통합'].map(escapeRegex).join('|');
-  const match = normalizedLine.match(new RegExp(`^(.*?)(?:\\(|\\[)\\s*((?:${degreePattern})(?:\\s*,\\s*(?:${degreePattern}))*)\\s*(?:\\)|\\])\\s*$`, 'i'));
+  const match = normalizedLine.match(
+    new RegExp(
+      `^(.*?)(?:\\(|\\[)\\s*((?:${degreePattern})(?:\\s*,\\s*(?:${degreePattern}))*)\\s*(?:\\)|\\])\\s*$`,
+      'i'
+    )
+  );
+
   if (!match) return [];
 
   const prefix = normalizeEducationRecord(match[1]).replace(/[,:;/-]\s*$/g, '').trim();
   const degrees = splitDegreeList(match[2]);
   if (!prefix || !degrees.length) return [];
 
-  return uniq(degrees.flatMap((degree) => expandIntegratedDegree(prefix, degree)).filter(Boolean));
+  return uniq(
+    degrees
+      .flatMap((degree) => expandIntegratedDegree(prefix, degree))
+      .filter(Boolean)
+  );
+};
+
+const splitEducationParts = (line = '') => {
+  const source = normalizeEducationRecord(line);
+  if (!source) return [];
+
+  const parts = [];
+  let buffer = '';
+  let roundDepth = 0;
+  let squareDepth = 0;
+
+  const flush = () => {
+    const value = normalizeEducationRecord(buffer);
+    if (value) parts.push(value);
+    buffer = '';
+  };
+
+  const shouldSplitAfter = (index) => {
+    const next = source.slice(index + 1).trim();
+    if (!next) return false;
+
+    return /^(?:[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School|Institute)|(?:\[|\()?\s*(?:학사|석사|박사|전문학사|박사수료|박사과정수료|석박사\s*통합|석박사통합))/.test(next);
+  };
+
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+
+    if (ch === '(') {
+      roundDepth += 1;
+      buffer += ch;
+      continue;
+    }
+
+    if (ch === ')') {
+      roundDepth = Math.max(0, roundDepth - 1);
+      buffer += ch;
+      continue;
+    }
+
+    if (ch === '[') {
+      squareDepth += 1;
+      buffer += ch;
+      continue;
+    }
+
+    if (ch === ']') {
+      squareDepth = Math.max(0, squareDepth - 1);
+      buffer += ch;
+      continue;
+    }
+
+    if ((ch === '/' || ch === ',') && roundDepth === 0 && squareDepth === 0 && shouldSplitAfter(i)) {
+      flush();
+      continue;
+    }
+
+    buffer += ch;
+  }
+
+  flush();
+  return parts.length ? parts : [source];
 };
 
 const splitEducationRecords = (text = '') => {
   const taggedSegments = extractTaggedEducationSegments(text);
   const anchoredSegments = extractDegreeAnchoredSegments(text);
-  const rawLines = (taggedSegments.length ? taggedSegments : anchoredSegments.length ? anchoredSegments : splitBullets(prepareEducationSource(text))
+  const fallbackSegments = splitBullets(prepareEducationSource(text))
     .flatMap((line) => line.split(/\n+/))
     .flatMap((line) => sanitizeBracketArtifacts(line).split(/\s*;\s*|\s*\|\s*/))
     .map((line) => normalizeEducationRecord(line))
-    .filter(Boolean));
+    .filter(Boolean);
 
+  const seedLines = uniq([...taggedSegments, ...anchoredSegments, ...fallbackSegments]).filter(Boolean);
   const records = [];
 
-  rawLines.forEach((line) => {
-    const context = extractEducationContext(line);
-    const bracketTagged = extractBracketTaggedEducation(line);
+  seedLines.forEach((line) => {
+    const normalizedLine = normalizeEducationRecord(line);
+    if (!normalizedLine) return;
+
+    if (!DEGREE_PATTERN_GLOBAL.test(normalizedLine) && !isMeaningfulEducationContext(normalizedLine)) {
+      return;
+    }
+
+    const baseContext = extractEducationContext(normalizedLine);
+    let runningContext = baseContext;
+
+    const bracketTagged = extractBracketTaggedEducation(normalizedLine);
     if (bracketTagged.length) {
-      records.push(...bracketTagged.map((record) => attachContextToDegreeOnly(record, context)));
+      bracketTagged.forEach((record) => {
+        const normalizedRecord = attachContextToDegreeOnly(record, runningContext || baseContext);
+        if (normalizedRecord && DEGREE_PATTERN_GLOBAL.test(normalizedRecord)) {
+          records.push(normalizedRecord);
+          const nextContext = extractEducationContext(normalizedRecord);
+          if (nextContext) runningContext = nextContext;
+        }
+      });
       return;
     }
 
-    const expanded = expandParentheticalDegrees(line);
+    const expanded = expandParentheticalDegrees(normalizedLine);
     if (expanded.length) {
-      records.push(...expanded.map((record) => attachContextToDegreeOnly(record, context)));
+      expanded.forEach((record) => {
+        const normalizedRecord = attachContextToDegreeOnly(record, runningContext || baseContext);
+        if (normalizedRecord && DEGREE_PATTERN_GLOBAL.test(normalizedRecord)) {
+          records.push(normalizedRecord);
+          const nextContext = extractEducationContext(normalizedRecord);
+          if (nextContext) runningContext = nextContext;
+        }
+      });
       return;
     }
 
-    const parts = line
-      .split(/\s*\/\s*(?=(?:[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School)|(?:\[|\()?\s*(?:학사|석사|박사|전문학사|석박사)))|\s*,\s*(?=(?:[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School)|(?:\[|\()?\s*(?:학사|석사|박사|전문학사|석박사)))/)
-      .map((part) => normalizeEducationRecord(part))
-      .filter(Boolean);
-
+    const parts = splitEducationParts(normalizedLine);
     if (!parts.length) return;
 
     parts.forEach((part) => {
-      const expandedPart = expandParentheticalDegrees(part);
-      if (expandedPart.length) {
-        records.push(...expandedPart.map((record) => attachContextToDegreeOnly(record, context)));
+      const normalizedPart = normalizeEducationRecord(part);
+      if (!normalizedPart) return;
+
+      const nestedBracketTagged = extractBracketTaggedEducation(normalizedPart);
+      if (nestedBracketTagged.length) {
+        nestedBracketTagged.forEach((record) => {
+          const normalizedRecord = attachContextToDegreeOnly(record, runningContext || baseContext);
+          if (normalizedRecord && DEGREE_PATTERN_GLOBAL.test(normalizedRecord)) {
+            records.push(normalizedRecord);
+            const nextContext = extractEducationContext(normalizedRecord);
+            if (nextContext) runningContext = nextContext;
+          }
+        });
         return;
       }
 
-      const normalizedPart = attachContextToDegreeOnly(part, context);
-      if (DEGREE_PATTERN_GLOBAL.test(normalizedPart)) {
-        records.push(normalizedPart);
-      } else if (records.length && EDUCATION_KEYWORD_PATTERN.test(normalizedPart)) {
+      const nestedExpanded = expandParentheticalDegrees(normalizedPart);
+      if (nestedExpanded.length) {
+        nestedExpanded.forEach((record) => {
+          const normalizedRecord = attachContextToDegreeOnly(record, runningContext || baseContext);
+          if (normalizedRecord && DEGREE_PATTERN_GLOBAL.test(normalizedRecord)) {
+            records.push(normalizedRecord);
+            const nextContext = extractEducationContext(normalizedRecord);
+            if (nextContext) runningContext = nextContext;
+          }
+        });
+        return;
+      }
+
+      if (isMeaningfulEducationContext(normalizedPart) && !DEGREE_PATTERN_GLOBAL.test(normalizedPart)) {
+        runningContext = normalizedPart;
+        return;
+      }
+
+      const normalizedRecord = attachContextToDegreeOnly(normalizedPart, runningContext || baseContext);
+
+      if (normalizedRecord && DEGREE_PATTERN_GLOBAL.test(normalizedRecord)) {
+        records.push(normalizedRecord);
+        const nextContext = extractEducationContext(normalizedRecord);
+        if (nextContext) runningContext = nextContext;
+        return;
+      }
+
+      if (records.length && isMeaningfulEducationContext(normalizedPart)) {
         records[records.length - 1] = normalizeEducationRecord(`${records[records.length - 1]} ${normalizedPart}`);
+        const nextContext = extractEducationContext(records[records.length - 1]);
+        if (nextContext) runningContext = nextContext;
       }
     });
   });
@@ -487,34 +659,48 @@ const splitEducationRecords = (text = '') => {
     records
       .map((record) => normalizeEducationRecord(record))
       .filter(Boolean)
-      .filter((record) => DEGREE_PATTERN_GLOBAL.test(record) || EDUCATION_KEYWORD_PATTERN.test(record))
+      .filter((record) => DEGREE_PATTERN_GLOBAL.test(record))
   );
 };
 
 const extractHighestEducation = (records = []) => {
   if (!records.length) return '';
 
-  let best = { line: records[0], rank: degreeRank(records[0]), status: educationStatusWeight(records[0]), index: 0 };
+  let best = null;
 
   records.forEach((line, index) => {
     const candidate = {
-      line,
+      line: normalizeEducationRecord(line),
       rank: degreeRank(line),
       status: educationStatusWeight(line),
+      contextScore: extractEducationContext(line) ? 2 : isStandaloneDegreeRecord(line) ? 0 : 1,
       index,
     };
+
+    if (!best) {
+      best = candidate;
+      return;
+    }
 
     if (
       candidate.rank > best.rank ||
       (candidate.rank === best.rank && candidate.status > best.status) ||
-      (candidate.rank === best.rank && candidate.status === best.status && candidate.line.length > best.line.length) ||
-      (candidate.rank === best.rank && candidate.status === best.status && candidate.line.length === best.line.length && candidate.index > best.index)
+      (candidate.rank === best.rank && candidate.status === best.status && candidate.contextScore > best.contextScore) ||
+      (candidate.rank === best.rank &&
+        candidate.status === best.status &&
+        candidate.contextScore === best.contextScore &&
+        candidate.line.length > best.line.length) ||
+      (candidate.rank === best.rank &&
+        candidate.status === best.status &&
+        candidate.contextScore === best.contextScore &&
+        candidate.line.length === best.line.length &&
+        candidate.index > best.index)
     ) {
       best = candidate;
     }
   });
 
-  return best.line;
+  return best?.line || '';
 };
 
 const protectExpertiseTerms = (text = '') => {
