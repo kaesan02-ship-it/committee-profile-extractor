@@ -29,7 +29,7 @@ const CURRENT_PREFIX_PATTERN = /^(?:현재|현|現|現\)|現\s*\)|\(현\)|\[현\
 const PREVIOUS_PREFIX_PATTERN = /^(?:전|前|\(전\))\s*[-)\]:：.]*/;
 const DATE_RANGE_PREFIX_PATTERN = /^(?:\d{4}(?:[.]\d{1,2})?\s*[~∼〜-]\s*(?:\d{4}(?:[.]\d{1,2})?|현재)|\d{4}\s*년\s*~\s*(?:\d{4}\s*년|현재)|\d{4}[.]\d{1,2}\s*~\s*현재)\s*/;
 const CONTACT_NOISE_PATTERN = /(연락처|휴대전화|휴대폰|핸드폰번호|전화번호|이메일|E-mail|Email|메일|메일주소)/i;
-const EDUCATION_KEYWORD_PATTERN = /(학사|석사|박사|전문학사|대학교|대학원|학위|졸업|수료|재학|학과|학부|전공|University|Department|School)/i;
+const EDUCATION_KEYWORD_PATTERN = /(학사|석사|박사|전문학사|대학교|대학원|학위|졸업|수료|재학|학과|학부|전공|University|Department|School|College)/i;
 const CAREER_SECTION_LINE_PATTERN = /(경력|이력|재직|근무|수행|프로젝트|담당|위원|심사|평가)/;
 const EXPERTISE_LABEL_PATTERN = /^(?:전문분야|전\s*문\s*분야|전문\s*분야|전문\s*산업분야|전문\s*직무분야|주요분야|전공|핵심역량)\s*[:：]?/;
 const TOKEN_PLACEHOLDER = '__SLASH__';
@@ -50,11 +50,12 @@ const cleanInline = (text = '') => decodeHTML(String(text)).replace(/[“”"`]/
 const uniq = (arr = []) => [...new Set(arr.filter(Boolean))];
 const safeText = (text = '') => cleanInline(text).replace(/^[-•■□▷▶*]+\s*/, '');
 const firstNonEmpty = (...values) => values.map((value) => cleanInline(value)).find(Boolean) || '';
+const firstNonEmptyPreserveLines = (...values) => values.map((value) => String(value ?? '').trim()).find(Boolean) || '';
 const escapeRegex = (text = '') => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const normalizeDegreeLabel = (text = '') => {
   const value = cleanInline(text).replace(/\s+/g, '');
-  if (/석박사통합/i.test(value)) return '석박사 통합';
+  if (/석박사통합|통합석박사/i.test(value)) return '석박사 통합';
   if (/박사과정수료/i.test(value)) return '박사과정수료';
   if (/박사수료/i.test(value)) return '박사수료';
   if (/박사/i.test(value)) return '박사';
@@ -111,11 +112,24 @@ const sanitizeBracketArtifacts = (text = '') => {
 
 const compactEducationSpacing = (text = '') => {
   let value = sanitizeBracketArtifacts(text);
+
   EDUCATION_COMPACT_PATTERNS.forEach(({ regex, replace }) => {
     value = value.replace(regex, replace);
   });
 
   return value
+    .replace(/([가-힣A-Za-z]{2,})\s+정비\s+공\s+학/g, '$1정비공학')
+    .replace(/([가-힣A-Za-z]{2,})\s+항공\s+정비\s+공\s+학/g, '$1항공정비공학')
+    .replace(/항공정비공\s+학/g, '항공정비공학')
+    .replace(/항공산업\s+학/g, '항공산업학')
+    .replace(/([가-힣A-Za-z]{2,})\s+생산\s+공\s+학/g, '$1생산공학')
+    .replace(/([가-힣A-Za-z]{2,})\s+산업\s+학/g, '$1산업학')
+    .replace(/설계\s+학/g, '설계학')
+    .replace(/([가-힣A-Za-z]{2,})\s+([가-힣A-Za-z]{1,12})\s+학(?=\s*(?:학사|석사|박사|과|부|전공|$|,|\)|\n))/g, '$1$2학')
+    .replace(/(대학교|대학원|대학|교육원|University|College|School)(?=[가-힣A-Za-z]{2,}(?:학과|학부|전공|공학|산업학|설계학|기술교육원|학))/g, '$1 ')
+    .replace(/([가-힣A-Za-z]{2,})\s*-\s*([가-힣A-Za-z]{1,12})\s*학/g, '$1$2학')
+    .replace(/([가-힣A-Za-z])-(?=(?:공학|과|부|전공|학))/g, '$1')
+    .replace(/-\s*$/g, '')
     .replace(/\s*·\s*/g, ' · ')
     .replace(/\s*,\s*/g, ', ')
     .replace(/\s*\/\s*/g, ' / ')
@@ -124,6 +138,17 @@ const compactEducationSpacing = (text = '') => {
     .replace(/\(\s*/g, ' (')
     .replace(/\s*\)/g, ') ')
     .replace(/\s{2,}/g, ' ')
+    .trim();
+};
+
+const prepareEducationSource = (text = '') => {
+  return compactEducationSpacing(text)
+    .replace(/(?<=[가-힣A-Za-z])(?=\[(?:학사|석사|박사|전문학사|박사수료|박사과정수료)|\((?:학사|석사|박사|전문학사|박사수료|박사과정수료))/g, ' ')
+    .replace(/(학사|석사|박사|전문학사|박사수료|박사과정수료|석박사\s*통합)\s*(?=(?:[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School)))/g, '$1\n')
+    .replace(/([\])}])\s*(?=(?:[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School)))/g, '$1\n')
+    .replace(/\s*[,;/]\s*(?=(?:[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School)|\[|\())/g, '\n')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/\n{2,}/g, '\n')
     .trim();
 };
 
@@ -256,6 +281,8 @@ const normalizeEducationRecord = (line = '') => {
     .replace(/^[-•■□▷▶*]+\s*/, '')
     .replace(/^[\])}\s]+/, '')
     .replace(/[([{]\s*$/, '')
+    .replace(/[,:;]\s*$/g, '')
+    .replace(/-\s*$/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 
@@ -268,8 +295,20 @@ const splitDegreeList = (text = '') => {
     sanitizeBracketArtifacts(text)
       .split(/\s*,\s*|\s*·\s*|\s*\/\s*/)
       .map((token) => normalizeDegreeLabel(token))
-      .filter((token) => EDUCATION_DEGREE_KEYWORDS.includes(token))
+      .filter((token) => EDUCATION_DEGREE_KEYWORDS.includes(token) || token === '석박사 통합')
   );
+};
+
+const expandIntegratedDegree = (prefix = '', degree = '') => {
+  const normalizedPrefix = normalizeEducationRecord(prefix).replace(/[,:;/-]\s*$/g, '').trim();
+  if (!normalizedPrefix) return [];
+  if (degree === '석박사 통합') {
+    return [
+      normalizeEducationRecord(`${normalizedPrefix} 석사`),
+      normalizeEducationRecord(`${normalizedPrefix} 박사`),
+    ];
+  }
+  return [normalizeEducationRecord(`${normalizedPrefix} ${degree}`)];
 };
 
 const extractEducationContext = (line = '') => {
@@ -294,25 +333,98 @@ const attachContextToDegreeOnly = (record = '', context = '') => {
 };
 
 const extractBracketTaggedEducation = (line = '') => {
-  const degreePattern = EDUCATION_DEGREE_KEYWORDS.map(escapeRegex).join('|');
+  const degreePattern = [...EDUCATION_DEGREE_KEYWORDS, '석박사 통합'].map(escapeRegex).join('|');
   const regex = new RegExp(`(?:^|[\\s,])(?:\\[|\\()\\s*(${degreePattern})\\s*(?:\\]|\\))\\s*([^\\[\\(]+?)(?=(?:\\s*(?:\\[|\\()\\s*(?:${degreePattern})\\s*(?:\\]|\\)))|$)`, 'gi');
   const matches = Array.from(normalizeEducationRecord(line).matchAll(regex));
 
   return uniq(
     matches
-      .map((match) => {
+      .flatMap((match) => expandIntegratedDegree(match[2], normalizeDegreeLabel(match[1])))
+      .filter(Boolean)
+  );
+};
+
+const extractTaggedEducationSegments = (text = '') => {
+  const degreePattern = [...EDUCATION_DEGREE_KEYWORDS, '석박사 통합'].map(escapeRegex).join('|');
+  const regex = new RegExp(`(?:\\[|\\()\\s*(${degreePattern})\\s*(?:\\]|\\))\\s*([\\s\\S]*?)(?=(?:\\s*(?:\\[|\\()\\s*(?:${degreePattern})\\s*(?:\\]|\\)))|$)`, 'gi');
+  const source = compactEducationSpacing(text);
+  const matches = Array.from(source.matchAll(regex));
+
+  return uniq(
+    matches
+      .flatMap((match) => {
+        const body = normalizeEducationRecord(match[2]).replace(/[,:;/-]\\s*$/g, '').trim();
         const degree = normalizeDegreeLabel(match[1]);
-        const body = normalizeEducationRecord(match[2]);
-        if (!body) return '';
-        return normalizeEducationRecord(`${body} ${degree}`);
+        return expandIntegratedDegree(body, degree);
       })
       .filter(Boolean)
   );
 };
 
+const cleanupEducationFragment = (segment = '') => {
+  const normalizedSegment = normalizeEducationRecord(segment)
+    .replace(/^(?:학점은행제?|학점은행)\s*(?:[,/·]|$)\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalizedSegment) return '';
+
+  const fragments = normalizedSegment
+    .split(/\s*\/\s*/)
+    .map((part) => normalizeEducationRecord(part))
+    .filter(Boolean);
+
+  if (!fragments.length) return normalizedSegment;
+
+  const last = fragments[fragments.length - 1];
+  const institutionPattern = /(대학교|대학원|대학|교육원|University|College|School|Institute)/i;
+
+  if (institutionPattern.test(last)) {
+    return last;
+  }
+
+  if (fragments.length >= 2 && DEGREE_PATTERN_GLOBAL.test(last) && !institutionPattern.test(last)) {
+    const priorInstitution = [...fragments.slice(0, -1)].reverse().find((part) => institutionPattern.test(part));
+    if (priorInstitution) {
+      return normalizeEducationRecord(`${priorInstitution} ${last}`);
+    }
+  }
+
+  return normalizeEducationRecord(fragments.slice(-2).join(' '));
+};
+
+const extractDegreeAnchoredSegments = (text = '') => {
+  const degreePattern = [...EDUCATION_DEGREE_KEYWORDS, '석박사 통합'].map(escapeRegex).join('|');
+  const degreeAnchoredRegex = new RegExp(`[^\\n,;]+?(?:${degreePattern})(?:\\s*(?:졸업|수료|재학|취득|예정))?`, 'gi');
+  const source = prepareEducationSource(text);
+  const seeds = source
+    .split(/\n+/)
+    .flatMap((line) => line.split(/\s*;\s*|\s*\|\s*/))
+    .map((line) => normalizeEducationRecord(line))
+    .filter(Boolean);
+
+  const segments = [];
+
+  seeds.forEach((seed) => {
+    const matches = seed.match(degreeAnchoredRegex);
+    if (matches?.length) {
+      matches.forEach((match) => {
+        const cleaned = cleanupEducationFragment(match);
+        if (cleaned) segments.push(cleaned);
+      });
+      return;
+    }
+
+    const cleaned = cleanupEducationFragment(seed);
+    if (cleaned && DEGREE_PATTERN_GLOBAL.test(cleaned)) segments.push(cleaned);
+  });
+
+  return uniq(segments);
+};
+
 const expandParentheticalDegrees = (line = '') => {
   const normalizedLine = normalizeEducationRecord(line);
-  const degreePattern = EDUCATION_DEGREE_KEYWORDS.map(escapeRegex).join('|');
+  const degreePattern = [...EDUCATION_DEGREE_KEYWORDS, '석박사 통합'].map(escapeRegex).join('|');
   const match = normalizedLine.match(new RegExp(`^(.*?)(?:\\(|\\[)\\s*((?:${degreePattern})(?:\\s*,\\s*(?:${degreePattern}))*)\\s*(?:\\)|\\])\\s*$`, 'i'));
   if (!match) return [];
 
@@ -320,14 +432,17 @@ const expandParentheticalDegrees = (line = '') => {
   const degrees = splitDegreeList(match[2]);
   if (!prefix || !degrees.length) return [];
 
-  return uniq(degrees.map((degree) => normalizeEducationRecord(`${prefix} ${degree}`)));
+  return uniq(degrees.flatMap((degree) => expandIntegratedDegree(prefix, degree)).filter(Boolean));
 };
 
 const splitEducationRecords = (text = '') => {
-  const rawLines = splitBullets(text)
+  const taggedSegments = extractTaggedEducationSegments(text);
+  const anchoredSegments = extractDegreeAnchoredSegments(text);
+  const rawLines = (taggedSegments.length ? taggedSegments : anchoredSegments.length ? anchoredSegments : splitBullets(prepareEducationSource(text))
+    .flatMap((line) => line.split(/\n+/))
     .flatMap((line) => sanitizeBracketArtifacts(line).split(/\s*;\s*|\s*\|\s*/))
     .map((line) => normalizeEducationRecord(line))
-    .filter(Boolean);
+    .filter(Boolean));
 
   const records = [];
 
@@ -346,7 +461,7 @@ const splitEducationRecords = (text = '') => {
     }
 
     const parts = line
-      .split(/\s*\/\s*(?=[^/]*(?:대학교|대학원|학사|석사|박사|전문학사|석박사))|\s*,\s*(?=[^,]*(?:대학교|대학원|학사|석사|박사|전문학사|석박사))/)
+      .split(/\s*\/\s*(?=(?:[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School)|(?:\[|\()?\s*(?:학사|석사|박사|전문학사|석박사)))|\s*,\s*(?=(?:[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School)|(?:\[|\()?\s*(?:학사|석사|박사|전문학사|석박사)))/)
       .map((part) => normalizeEducationRecord(part))
       .filter(Boolean);
 
@@ -376,13 +491,12 @@ const splitEducationRecords = (text = '') => {
   );
 };
 
-const extractHighestEducation = (text = '') => {
-  const lines = splitEducationRecords(text);
-  if (!lines.length) return '';
+const extractHighestEducation = (records = []) => {
+  if (!records.length) return '';
 
-  let best = { line: lines[0], rank: degreeRank(lines[0]), status: educationStatusWeight(lines[0]), index: 0 };
+  let best = { line: records[0], rank: degreeRank(records[0]), status: educationStatusWeight(records[0]), index: 0 };
 
-  lines.forEach((line, index) => {
+  records.forEach((line, index) => {
     const candidate = {
       line,
       rank: degreeRank(line),
@@ -581,7 +695,17 @@ const chooseAffiliation = (affiliationText = '', careerText = '') => {
   return scored[0]?.value || '';
 };
 
-const formatCareer = (text = '') => splitCareerEntries(text).slice(0, 15).join('\n');
+const formatEducationDetails = (records = []) => {
+  return records
+    .map((line, index) => ({ line: normalizeEducationRecord(line), index }))
+    .filter(({ line }) => Boolean(line))
+    .sort((a, b) => degreeRank(a.line) - degreeRank(b.line) || a.index - b.index)
+    .map(({ line }) => line)
+    .join('\n');
+};
+
+const formatCareerSummary = (entries = []) => entries.slice(0, 6).join('\n');
+const formatCareerDetails = (entries = []) => entries.slice(0, 15).join('\n');
 
 const calcAge = (birth = '') => {
   const normalizedBirth = extractBirth(birth);
@@ -676,8 +800,13 @@ export const createEmptyProfile = (fileName = '') => ({
   email: '',
   education: '',
   educationRaw: '',
+  educationDetails: '',
+  educationList: [],
   expertise: '',
   career: '',
+  careerRaw: '',
+  careerDetails: '',
+  careerList: [],
   error: false,
 });
 
@@ -725,6 +854,7 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
       findSectionBody(allText, FIELD_LABELS.career, SECTION_STOP_HEADERS.career),
       findLabeledValue(allNodes, FIELD_LABELS.career, { lookAhead: 24, validator: cleanInline })
     );
+    const careerEntries = splitCareerEntries(careerBody);
 
     const affiliationBody = firstNonEmpty(
       findSectionBody(allText, FIELD_LABELS.affiliation, SECTION_STOP_HEADERS.affiliation),
@@ -735,11 +865,14 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
 
     const educationBody = firstNonEmpty(
       findSectionBody(allText, FIELD_LABELS.education, SECTION_STOP_HEADERS.education),
-      findLabeledValue(allNodes, FIELD_LABELS.education, { lookAhead: 12, validator: cleanInline })
+      findLabeledValue(allNodes, FIELD_LABELS.education, { lookAhead: 16, validator: cleanInline })
     );
     const educationRecords = splitEducationRecords(educationBody);
-    row.educationRaw = educationRecords.join('\n');
-    row.education = firstNonEmpty(extractHighestEducation(educationBody), educationRecords[0], EMPTY_VALUE);
+
+    row.educationRaw = firstNonEmptyPreserveLines(prepareEducationSource(educationBody), EMPTY_VALUE);
+    row.educationDetails = firstNonEmptyPreserveLines(formatEducationDetails(educationRecords), EMPTY_VALUE);
+    row.educationList = educationRecords;
+    row.education = firstNonEmpty(extractHighestEducation(educationRecords), educationRecords[educationRecords.length - 1], EMPTY_VALUE);
 
     const expertiseBody = firstNonEmpty(
       findSectionBody(allText, FIELD_LABELS.expertise, SECTION_STOP_HEADERS.expertise),
@@ -747,7 +880,10 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
     );
     row.expertise = firstNonEmpty(extractExpertise(expertiseBody), EMPTY_VALUE);
 
-    row.career = firstNonEmpty(formatCareer(careerBody), EMPTY_VALUE);
+    row.careerRaw = firstNonEmptyPreserveLines(sanitizeBracketArtifacts(careerBody), EMPTY_VALUE);
+    row.careerDetails = firstNonEmptyPreserveLines(formatCareerDetails(careerEntries), EMPTY_VALUE);
+    row.careerList = careerEntries;
+    row.career = firstNonEmptyPreserveLines(formatCareerSummary(careerEntries), row.careerDetails, EMPTY_VALUE);
     row.age = row.birth !== EMPTY_VALUE ? calcAge(row.birth) : EMPTY_VALUE;
 
     return row;
