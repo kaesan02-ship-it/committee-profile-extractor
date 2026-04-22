@@ -655,12 +655,30 @@ const splitEducationRecords = (text = '') => {
     });
   });
 
-  return uniq(
+  const finalRecords = uniq(
     records
       .map((record) => normalizeEducationRecord(record))
       .filter(Boolean)
       .filter((record) => DEGREE_PATTERN_GLOBAL.test(record))
   );
+
+  return finalRecords.filter((record) => {
+    const degreeMatches = record.match(new RegExp(DEGREE_PATTERN_GLOBAL.source, 'gi')) || [];
+    if (degreeMatches.length < 2) return true;
+
+    const parts = record
+      .split(/\s*,\s*|\s*·\s*|\s*\/\s*/)
+      .map((part) => normalizeEducationRecord(part))
+      .filter(Boolean);
+
+    if (parts.length < 2) return true;
+
+    const allPartsExistSeparately = parts.every((part) =>
+      finalRecords.some((other) => other !== record && normalizeEducationRecord(other) === part)
+    );
+
+    return !allPartsExistSeparately;
+  });
 };
 
 const extractHighestEducation = (records = []) => {
