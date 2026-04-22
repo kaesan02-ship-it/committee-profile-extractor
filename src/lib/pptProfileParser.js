@@ -551,6 +551,97 @@ const splitEducationParts = (line = '') => {
   return parts.length ? parts : [source];
 };
 
+const getEducationDegreeLabels = (record = '') => {
+  return uniq(
+    (normalizeEducationRecord(record).match(new RegExp(DEGREE_PATTERN_GLOBAL.source, 'gi')) || [])
+      .map((token) => normalizeDegreeLabel(token))
+      .filter(Boolean)
+  );
+};
+
+const explodeEducationRecord = (record = '') => {
+  const normalizedRecord = normalizeEducationRecord(record);
+  if (!normalizedRecord || !DEGREE_PATTERN_GLOBAL.test(normalizedRecord)) return [];
+
+  const degreeLabels = getEducationDegreeLabels(normalizedRecord);
+  if (degreeLabels.length <= 1) return [normalizedRecord];
+
+  const baseContext = extractEducationContext(normalizedRecord);
+
+  const bracketTagged = extractBracketTaggedEducation(normalizedRecord)
+    .map((item) => attachContextToDegreeOnly(item, baseContext))
+    .map((item) => normalizeEducationRecord(item))
+    .filter(Boolean)
+    .filter((item) => DEGREE_PATTERN_GLOBAL.test(item))
+    .filter((item) => getEducationDegreeLabels(item).length === 1);
+  if (bracketTagged.length >= 2) return uniq(bracketTagged);
+
+  const expanded = expandParentheticalDegrees(normalizedRecord)
+    .map((item) => attachContextToDegreeOnly(item, baseContext))
+    .map((item) => normalizeEducationRecord(item))
+    .filter(Boolean)
+    .filter((item) => DEGREE_PATTERN_GLOBAL.test(item))
+    .filter((item) => getEducationDegreeLabels(item).length === 1);
+  if (expanded.length >= 2) return uniq(expanded);
+
+  const anchored = extractDegreeAnchoredSegments(normalizedRecord)
+    .map((item) => attachContextToDegreeOnly(item, baseContext || extractEducationContext(item)))
+    .map((item) => normalizeEducationRecord(item))
+    .filter(Boolean)
+    .filter((item) => DEGREE_PATTERN_GLOBAL.test(item))
+    .filter((item) => getEducationDegreeLabels(item).length === 1);
+  if (anchored.length >= 2) return uniq(anchored);
+
+  const splitParts = splitEducationParts(normalizedRecord)
+    .map((item) => attachContextToDegreeOnly(item, baseContext))
+    .map((item) => normalizeEducationRecord(item))
+    .filter(Boolean)
+    .filter((item) => DEGREE_PATTERN_GLOBAL.test(item))
+    .filter((item) => getEducationDegreeLabels(item).length === 1);
+  if (splitParts.length >= 2) return uniq(splitParts);
+
+  return [normalizedRecord];
+};
+
+const canonicalizeSingleEducationRecord = (record = '') => {
+  let value = normalizeEducationRecord(record)
+    .replace(/^(?:학점은행제?|학점은행)\s+/i, '')
+    .trim();
+
+  if (getEducationDegreeLabels(value).length !== 1) return value;
+
+  const carriedContextMatch = value.match(
+    /^(.*?(?:학과|학부|전공))\s+((?:[A-Za-z가-힣].*?(?:대학교|대학원|대학|교육원|University|College|School|Institute).*(?:학사|석사|박사|전문학사|박사수료|박사과정수료|석박사\s*통합|석박사통합).*))$/i
+  );
+
+  if (carriedContextMatch?.[2]) {
+    value = normalizeEducationRecord(carriedContextMatch[2]);
+  }
+
+  return value;
+};
+
+const hasCoveredStandaloneAlternative = (record = '', pool = []) => {
+  if (!isStandaloneDegreeRecord(record)) return false;
+
+  const degreeLabel = normalizeDegreeLabel(record);
+  return pool.some((other) => {
+    if (other === record || isStandaloneDegreeRecord(other)) return false;
+    return getEducationDegreeLabels(other).includes(degreeLabel);
+  });
+};
+
+const isCoveredByAtomicEducationRecords = (record = '', pool = []) => {
+  const normalizedRecord = normalizeEducationRecord(record);
+  const exploded = explodeEducationRecord(normalizedRecord)
+    .map((item) => normalizeEducationRecord(item))
+    .filter(Boolean);
+
+  if (exploded.length < 2) return false;
+
+  return exploded.every((item) => pool.some((other) => other !== normalizedRecord && normalizeEducationRecord(other) === item));
+};
+
 const splitEducationRecords = (text = '') => {
   const taggedSegments = extractTaggedEducationSegments(text);
   const anchoredSegments = extractDegreeAnchoredSegments(text);
@@ -655,30 +746,28 @@ const splitEducationRecords = (text = '') => {
     });
   });
 
-  const finalRecords = uniq(
+  const normalizedRecords = uniq(
     records
       .map((record) => normalizeEducationRecord(record))
       .filter(Boolean)
       .filter((record) => DEGREE_PATTERN_GLOBAL.test(record))
   );
 
-  return finalRecords.filter((record) => {
-    const degreeMatches = record.match(new RegExp(DEGREE_PATTERN_GLOBAL.source, 'gi')) || [];
-    if (degreeMatches.length < 2) return true;
+  const explodedRecords = uniq(
+    normalizedRecords
+      .flatMap((record) => explodeEducationRecord(record))
+      .map((record) => canonicalizeSingleEducationRecord(record))
+      .map((record) => normalizeEducationRecord(record))
+      .filter(Boolean)
+      .filter((record) => DEGREE_PATTERN_GLOBAL.test(record))
+  );
 
-    const parts = record
-      .split(/\s*,\s*|\s*·\s*|\s*\/\s*/)
-      .map((part) => normalizeEducationRecord(part))
-      .filter(Boolean);
+  const withoutCombinedDuplicates = explodedRecords.filter((record) => !isCoveredByAtomicEducationRecords(record, explodedRecords));
+  const withoutStandaloneDuplicates = withoutCombinedDuplicates.filter(
+    (record) => !hasCoveredStandaloneAlternative(record, withoutCombinedDuplicates)
+  );
 
-    if (parts.length < 2) return true;
-
-    const allPartsExistSeparately = parts.every((part) =>
-      finalRecords.some((other) => other !== record && normalizeEducationRecord(other) === part)
-    );
-
-    return !allPartsExistSeparately;
-  });
+  return uniq(withoutStandaloneDuplicates).filter(Boolean);
 };
 
 const extractHighestEducation = (records = []) => {
