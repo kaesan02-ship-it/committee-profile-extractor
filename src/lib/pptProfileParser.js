@@ -1044,4 +1044,155 @@ const extractNodesAndText = async (zip) => {
     .filter((name) => name.startsWith('ppt/slides/slide') && name.endsWith('.xml'))
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
-  const
+  const allNodes = [];
+  let allText = '';
+
+  for (const path of slidePaths) {
+    const file = zip.file(path);
+    if (!file) continue;
+
+    const xml = await file.async('string');
+    const paragraphs = xml.split(/<a:p>/);
+
+    for (const paragraph of paragraphs) {
+      const matches = paragraph.match(/<a:t>([^<]*)<\/a:t>/g) || [];
+      const text = matches
+        .map((item) => item.replace(/<\/?a:t>/g, '').trim())
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
+      if (text) {
+        allNodes.push(text);
+        allText += `${text}\n`;
+      }
+    }
+  }
+
+  return { allNodes, allText };
+};
+
+export const createEmptyProfile = (fileName = '') => ({
+  fileName,
+  name: '',
+  gender: '',
+  birth: '',
+  age: '',
+  affiliation: '',
+  phone: '',
+  email: '',
+  education: '',
+  educationRaw: '',
+  educationDetails: '',
+  educationList: [],
+  expertise: '',
+  career: '',
+  careerRaw: '',
+  careerDetails: '',
+  careerList: [],
+  error: false,
+});
+
+export const parsePptxProfileInput = async (input, fileName = '') => {
+  const fallback = createEmptyProfile(fileName);
+
+  try {
+    const zip = await JSZip.loadAsync(input);
+    const { allNodes, allText } = await extractNodesAndText(zip);
+    const joinedText = allNodes.join(' ');
+    const row = createEmptyProfile(fileName);
+
+    row.name = firstNonEmpty(
+      findLabeledValue(allNodes, FIELD_LABELS.name, { lookAhead: 5, validator: refineName }),
+      refineName(allText.match(/(?:위원\s*성명|성명|이름)\s*[:：]?\s*([가-힣\s]{2,8})/)?.[1]),
+      refineName(fileName.split(/[_\-.\s]/)[0]),
+      EMPTY_VALUE
+    );
+
+    row.gender = firstNonEmpty(
+      findLabeledValue(allNodes, FIELD_LABELS.gender, { lookAhead: 4, validator: extractGender }),
+      extractGender(allText),
+      EMPTY_VALUE
+    );
+
+    const extractedBirth = firstNonEmpty(
+      findLabeledValue(allNodes, FIELD_LABELS.birth, { lookAhead: 10, validator: extractBirth }),
+      extractBirth(allText)
+    );
+    row.birth = firstNonEmpty(extractedBirth, EMPTY_VALUE);
+
+    row.phone = firstNonEmpty(
+      findLabeledValue(allNodes, FIELD_LABELS.phone, { lookAhead: 12, validator: extractPhone }),
+      extractPhone(allText),
+      EMPTY_VALUE
+    );
+
+    row.email = firstNonEmpty(
+      findLabeledValue(allNodes, FIELD_LABELS.email, { lookAhead: 10, validator: extractEmail }),
+      extractEmail(allText),
+      EMPTY_VALUE
+    );
+
+    const careerBody = firstNonEmpty(
+      findSectionBody(allText, FIELD_LABELS.career, SECTION_STOP_HEADERS.career),
+      findLabeledValue(allNodes, FIELD_LABELS.career, { lookAhead: 24, validator: cleanInline })
+    );
+    const careerEntries = splitCareerEntries(careerBody);
+
+    const affiliationBody = firstNonEmpty(
+      findSectionBody(allText, FIELD_LABELS.affiliation, SECTION_STOP_HEADERS.affiliation),
+      findLabeledValue(allNodes, FIELD_LABELS.affiliation, { lookAhead: 10, validator: sanitizeAffiliation }),
+      joinedText
+    );
+    row.affiliation = firstNonEmpty(
+      chooseAffiliation(affiliationBody, careerBody),
+      sanitizeAffiliation(affiliationBody),
+      EMPTY_VALUE
+    );
+
+    const educationBody = firstNonEmpty(
+      findSectionBody(allText, FIELD_LABELS.education, SECTION_STOP_HEADERS.education),
+      findLabeledValue(allNodes, FIELD_LABELS.education, { lookAhead: 16, validator: cleanInline })
+    );
+    const educationRecords = splitEducationRecords(educationBody);
+
+    row.educationRaw = firstNonEmptyPreserveLines(prepareEducationSource(educationBody), EMPTY_VALUE);
+    row.educationDetails = firstNonEmptyPreserveLines(formatEducationDetails(educationRecords), EMPTY_VALUE);
+    row.educationList = educationRecords;
+    row.education = firstNonEmpty(
+      extractHighestEducation(educationRecords),
+      educationRecords[educationRecords.length - 1],
+      EMPTY_VALUE
+    );
+
+    const expertiseBody = firstNonEmpty(
+      findSectionBody(allText, FIELD_LABELS.expertise, SECTION_STOP_HEADERS.expertise),
+      findLabeledValue(allNodes, FIELD_LABELS.expertise, { lookAhead: 10, validator: cleanInline })
+    );
+    row.expertise = firstNonEmpty(extractExpertise(expertiseBody), EMPTY_VALUE);
+
+    row.careerRaw = firstNonEmptyPreserveLines(sanitizeBracketArtifacts(careerBody), EMPTY_VALUE);
+    row.careerDetails = firstNonEmptyPreserveLines(formatCareerDetails(careerEntries), EMPTY_VALUE);
+    row.careerList = careerEntries;
+    row.career = firstNonEmptyPreserveLines(
+      formatCareerSummary(careerEntries),
+      row.careerDetails,
+      EMPTY_VALUE
+    );
+    row.age = row.birth !== EMPTY_VALUE ? calcAge(row.birth) : EMPTY_VALUE;
+
+    return row;
+  } catch {
+    return {
+      ...fallback,
+      name: '오류',
+      error: true,
+    };
+  }
+};
+
+export const parsePptxProfile = async (file) => {
+  return parsePptxProfileInput(file, file?.name || '');
+};
+
+export { EMPTY_VALUE };
