@@ -1029,4 +1029,19 @@ const findSectionBody = (allText, headers = [], stopHeaders = []) => {
   for (const header of headers) {
     const headerPattern = header.replace(/\s+/g, '').split('').join('\\s*');
     const regex = new RegExp(
-      `${headerPattern}\\s*
+      `${headerPattern}\\s*[:：]?([\\s\\S]*?)(?=\\n\\s*(?:[●○•■□▷▶*-]\\s*)?(?:${stopPattern || '$^'})\\s*[:：]?|$)`,
+      'i'
+    );
+    const match = allText.match(regex);
+    if (match?.[1] && cleanInline(match[1]).length > 2) return decodeHTML(match[1]).trim();
+  }
+
+  return '';
+};
+
+const extractNodesAndText = async (zip) => {
+  const slidePaths = Object.keys(zip.files)
+    .filter((name) => name.startsWith('ppt/slides/slide') && name.endsWith('.xml'))
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+
+  const
