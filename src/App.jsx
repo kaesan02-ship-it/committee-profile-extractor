@@ -30,6 +30,11 @@ const normalizeText = (value = '') => {
   return text && text !== EMPTY_VALUE ? text : EMPTY_VALUE;
 };
 
+const isEmptyValue = (value = '') => {
+  const text = String(value ?? '').trim();
+  return !text || text === EMPTY_VALUE;
+};
+
 const normalizeMultiline = (value = '') => {
   const text = normalizeText(value);
   if (text === EMPTY_VALUE) return EMPTY_VALUE;
@@ -47,6 +52,100 @@ const bulletizeMultiline = (value = '') => {
     .split(/\n+/)
     .map((line) => `• ${line}`)
     .join('\n');
+};
+
+const parseBirthParts = (birth = '') => {
+  const match = String(birth ?? '').match(/(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
+  if (!match) return null;
+  return {
+    year: match[1],
+    month: String(Number(match[2])),
+    day: String(Number(match[3])),
+  };
+};
+
+const formatBirthForTemplate = (birth = '') => {
+  const parts = parseBirthParts(birth);
+  if (!parts) return '';
+  return `${parts.year}년 ${parts.month}월 ${parts.day}일`;
+};
+
+const formatAgeForTemplate = (age = '') => {
+  const digits = String(age ?? '').replace(/\D/g, '');
+  return digits || '';
+};
+
+const toLines = (value = '') => {
+  return String(value ?? '')
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter((line) => line && line !== EMPTY_VALUE);
+};
+
+const formatEducationForTemplate = (educationDetails = '', education = '') => {
+  const source = toLines(educationDetails).length ? educationDetails : education;
+  if (isEmptyValue(source)) return '';
+  return bulletizeMultiline(source).replaceAll('•', '●');
+};
+
+const formatCareerForTemplate = (row) => {
+  const careerLines = toLines(row.careerDetails || row.career)
+    .filter((line) => !/(서류|면접|평가)\s*경력|^\[?\s*(서류|면접)\s*\]?/i.test(line));
+  if (!careerLines.length) return '';
+
+  const currentLine = careerLines.find((line) => /(現|현재|현)/.test(line));
+  const previousLines = careerLines.filter((line) => !/(現|현재|현)/.test(line)).slice(0, 3);
+
+  const lines = [];
+
+  if (currentLine) {
+    lines.push(currentLine.replace(/^(?:現|현재|현)\s*[:)：.)-]?\s*/i, '現) '));
+  } else if (row.affiliation && row.affiliation !== EMPTY_VALUE) {
+    lines.push(`現) ${row.affiliation}`);
+  }
+
+  previousLines.forEach((line) => {
+    lines.push(line.replace(/^(?:前|전)\s*[:)：.)-]?\s*/i, '前) '));
+  });
+
+  return lines.slice(0, 4).join('\n');
+};
+
+const formatEvaluationCareerForTemplate = (row) => {
+  const baseText = String(row.careerRaw || row.careerDetails || row.career || '');
+  if (isEmptyValue(baseText)) return '';
+
+  const tokens = baseText
+    .split(/\n+|(?<=[.。;；])\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  const docs = [];
+  const interviews = [];
+  const etc = [];
+
+  tokens.forEach((line) => {
+    if (/(서류|문서|정량)/.test(line)) {
+      docs.push(line.replace(/^\[?\s*서류\s*\]?\s*/i, '').trim());
+      return;
+    }
+    if (/(면접|인터뷰)/.test(line)) {
+      interviews.push(line.replace(/^\[?\s*면접\s*\]?\s*/i, '').trim());
+      return;
+    }
+    if (/(평가)/.test(line)) {
+      etc.push(line);
+    }
+  });
+
+  const unique = (arr) => [...new Set(arr.filter(Boolean))];
+  const lines = [];
+
+  if (docs.length) lines.push(`[서류] ${unique(docs).slice(0, 3).join(', ')}`);
+  if (interviews.length) lines.push(`[면접] ${unique(interviews).slice(0, 3).join(', ')}`);
+  if (!lines.length && etc.length) lines.push(unique(etc).slice(0, 2).join(' / '));
+
+  return lines.join('\n');
 };
 
 const getLineCount = (...values) => {
@@ -231,6 +330,70 @@ const buildWorkbook = async (files, results) => {
 
   summaryRows.forEach((item) => summarySheet.addRow(item));
   applySheetStyle(summarySheet, { frozenColumns: 1, headerColor: '7A4A00' });
+
+  const formatSheet = workbook.addWorksheet('4.면접관양식');
+  formatSheet.columns = [
+    { header: 'No.', key: 'no', width: 8 },
+    { header: '이름', key: 'name', width: 12 },
+    { header: '성별', key: 'gender', width: 10 },
+    { header: '생년월일', key: 'birth', width: 20 },
+    { header: '연령', key: 'age', width: 10 },
+    { header: '학력', key: 'education', width: 42 },
+    { header: '주요경력(일부)', key: 'career', width: 58 },
+    { header: '평가경력', key: 'evaluationCareer', width: 36 },
+    { header: '비고', key: 'notes', width: 28 },
+    { header: '분야', key: 'field', width: 24 },
+  ];
+
+  formatSheet.addRow({
+    no: '번호작성',
+    name: '이름작성',
+    gender: '남 or 여 작성',
+    birth: 'yyyy-mm-dd 입력 시 yyyy년 mm월 dd일로 변환',
+    age: '생년월일 입력 시 자동계산',
+    education: '● 박사\n● 석사\n● 학사',
+    career: '최대 4줄\n現) 소속 직위 (yyyy.mm~현재)\n前) 주요경력 소속 최종직위 (yyyy.mm~yyyy.mm)',
+    evaluationCareer: '- 서류, 면접 구분\n- 중복된 항목 삭제',
+    notes: '- 특이사항 기재\n- 중요 전달사항 없는 경우 공란',
+    field: '',
+  });
+
+  formatSheet.addRow({
+    no: '예시',
+    name: '홍길동',
+    gender: '남',
+    birth: '1966년 8월 5일',
+    age: 60,
+    education: '● 한국대학교 경영학 박사 (인사관리전공)\n● 한국대학교 경영학 석사 (인사관리전공)\n● 대한대학교 경영학 학사',
+    career: '現) 서울대학교 경제학부 교수 (2020.03~현재)\n前) 서강대학교 경제학부 조교수 (2018.03~2019.12)\n前) KDB산업은행 기업금융부문 부장 (2007.03~2018.02)',
+    evaluationCareer: '[서류] 대구시설관리공단, 한국대학교, 강남문화재단\n[면접] KB국민은행, 한국산업은행, 한국벤처투자 등 다수',
+    notes: '-',
+    field: '',
+  });
+
+  results.forEach((row, index) => {
+    const name = normalizeText(row.name);
+    const gender = normalizeText(row.gender);
+    const expertise = normalizeText(row.expertise);
+
+    formatSheet.addRow({
+      no: index + 1,
+      name: name === EMPTY_VALUE ? '' : name,
+      gender: gender === EMPTY_VALUE ? '' : gender,
+      birth: formatBirthForTemplate(row.birth),
+      age: formatAgeForTemplate(row.age),
+      education: formatEducationForTemplate(row.educationDetails, row.education),
+      career: formatCareerForTemplate(row),
+      evaluationCareer: formatEvaluationCareerForTemplate(row),
+      notes: '',
+      field: expertise === EMPTY_VALUE ? '' : expertise,
+    });
+  });
+
+  formatSheet.eachRow((row, rowNumber) => {
+    row.height = rowNumber <= 3 ? 48 : 72;
+  });
+  applySheetStyle(formatSheet, { frozenColumns: 2, headerColor: '4C4F57' });
 
   return workbook;
 };

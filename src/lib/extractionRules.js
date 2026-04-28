@@ -2,7 +2,7 @@ export const EMPTY_VALUE = '미상';
 
 export const FIELD_LABELS = {
   name: ['위원 성명', '위원성명', '성명', '이름', '이 름'],
-  gender: ['성별', '성 별'],
+  gender: ['성별', '성 별', '성별(남/여)', '남/여', '남·여', '남녀구분'],
   birth: ['출생년월일', '생년월일', '생년', '생 년 월 일'],
   affiliation: [
     '현소속',

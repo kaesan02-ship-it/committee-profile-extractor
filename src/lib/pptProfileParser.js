@@ -110,6 +110,29 @@ const sanitizeBracketArtifacts = (text = '') => {
   return output.replace(/\s+/g, ' ').trim();
 };
 
+const normalizeGeneralSpacing = (text = '') => {
+  return cleanInline(text)
+    .replace(/\(\s+/g, '(')
+    .replace(/\s+\)/g, ')')
+    .replace(/\[\s+/g, '[')
+    .replace(/\s+\]/g, ']')
+    .replace(/\s+([,.;:])/g, '$1')
+    .replace(/([,.;:])(?=\S)/g, '$1 ')
+    .replace(/\s*~\s*/g, '~')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\b現\s+\)/g, '現)')
+    .replace(/\b前\s+\)/g, '前)')
+    .trim();
+};
+
+const tidyMultiline = (text = '') => {
+  return String(text ?? '')
+    .split(/\n+/)
+    .map((line) => normalizeGeneralSpacing(line))
+    .filter(Boolean)
+    .join('\n');
+};
+
 const compactEducationSpacing = (text = '') => {
   let value = sanitizeBracketArtifacts(text);
 
@@ -245,12 +268,21 @@ const extractBirth = (text = '') => {
 };
 
 const extractGender = (text = '') => {
-  const normalized = cleanInline(text).replace(/\s/g, '');
-  const labelMatch = normalized.match(/성별[:：]?(남성|여성|남자|여자|남|여)/);
-  if (labelMatch) return labelMatch[1].startsWith('남') ? '남' : '여';
+  const inline = cleanInline(text);
+  const normalized = inline.replace(/\s/g, '');
 
-  const bareMatch = normalized.match(/(^|[^가-힣])(남성|여성|남자|여자|남|여)([^가-힣]|$)/);
-  if (bareMatch) return bareMatch[2].startsWith('남') ? '남' : '여';
+  const contextMatch = inline.match(/(?:성별|남녀|gender)\s*[:：]?\s*(남성|여성|남자|여자|남|여|男|女)/i);
+  if (contextMatch) return /남|男/i.test(contextMatch[1]) ? '남' : '여';
+
+  const labelMatch = normalized.match(/성별[:：]?(남성|여성|남자|여자|남|여|男|女)/i);
+  if (labelMatch) return /남|男/i.test(labelMatch[1]) ? '남' : '여';
+
+  if (/^(남성|여성|남자|여자|남|여|男|女)$/i.test(normalized)) {
+    return /남|男/i.test(normalized) ? '남' : '여';
+  }
+
+  const bareMatch = normalized.match(/(^|[^가-힣A-Za-z])(남성|여성|남자|여자|남|여|男|女)([^가-힣A-Za-z]|$)/i);
+  if (bareMatch) return /남|男/i.test(bareMatch[2]) ? '남' : '여';
   return '';
 };
 
@@ -288,6 +320,30 @@ const normalizeEducationRecord = (line = '') => {
 
   value = value.replace(/^,\s*/, '').replace(/,\s*$/, '').trim();
   return value;
+};
+
+const hasBalancedBrackets = (text = '') => {
+  const source = String(text ?? '');
+  const pairs = [
+    ['(', ')'],
+    ['[', ']'],
+  ];
+
+  return pairs.every(([open, close]) => {
+    let depth = 0;
+    for (const ch of source) {
+      if (ch === open) depth += 1;
+      if (ch === close) depth -= 1;
+      if (depth < 0) return false;
+    }
+    return depth === 0;
+  });
+};
+
+const educationCanonicalKey = (text = '') => {
+  return normalizeEducationRecord(text)
+    .toLowerCase()
+    .replace(/[\s()[\]{}.,·/:-]/g, '');
 };
 
 const splitDegreeList = (text = '') => {
@@ -767,7 +823,17 @@ const splitEducationRecords = (text = '') => {
     (record) => !hasCoveredStandaloneAlternative(record, withoutCombinedDuplicates)
   );
 
-  return uniq(withoutStandaloneDuplicates).filter(Boolean);
+  const balancedCandidates = withoutStandaloneDuplicates.filter((record) => hasBalancedBrackets(record));
+  const stableRecords = balancedCandidates.length ? balancedCandidates : withoutStandaloneDuplicates;
+
+  const canonicalBest = new Map();
+  stableRecords.forEach((record) => {
+    const key = educationCanonicalKey(record);
+    const prev = canonicalBest.get(key);
+    if (!prev || record.length > prev.length) canonicalBest.set(key, record);
+  });
+
+  return uniq([...canonicalBest.values()]).filter(Boolean);
 };
 
 const extractHighestEducation = (records = []) => {
@@ -1217,7 +1283,7 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
     );
 
     row.gender = firstNonEmpty(
-      findLabeledValue(allNodes, FIELD_LABELS.gender, { lookAhead: 4, validator: extractGender }),
+      findLabeledValue(allNodes, FIELD_LABELS.gender, { lookAhead: 8, validator: extractGender }),
       extractGender(allText),
       EMPTY_VALUE
     );
@@ -1263,8 +1329,8 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
     );
     const educationRecords = splitEducationRecords(educationBody);
 
-    row.educationRaw = firstNonEmptyPreserveLines(prepareEducationSource(educationBody), EMPTY_VALUE);
-    row.educationDetails = firstNonEmptyPreserveLines(formatEducationDetails(educationRecords), EMPTY_VALUE);
+    row.educationRaw = firstNonEmptyPreserveLines(tidyMultiline(prepareEducationSource(educationBody)), EMPTY_VALUE);
+    row.educationDetails = firstNonEmptyPreserveLines(tidyMultiline(formatEducationDetails(educationRecords)), EMPTY_VALUE);
     row.educationList = educationRecords;
     row.education = firstNonEmpty(
       extractHighestEducation(educationRecords),
@@ -1278,11 +1344,11 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
     );
     row.expertise = firstNonEmpty(extractExpertise(expertiseBody), EMPTY_VALUE);
 
-    row.careerRaw = firstNonEmptyPreserveLines(sanitizeBracketArtifacts(careerBody), EMPTY_VALUE);
-    row.careerDetails = firstNonEmptyPreserveLines(formatCareerDetails(careerEntries), EMPTY_VALUE);
+    row.careerRaw = firstNonEmptyPreserveLines(tidyMultiline(sanitizeBracketArtifacts(careerBody)), EMPTY_VALUE);
+    row.careerDetails = firstNonEmptyPreserveLines(tidyMultiline(formatCareerDetails(careerEntries)), EMPTY_VALUE);
     row.careerList = careerEntries;
     row.career = firstNonEmptyPreserveLines(
-      formatCareerSummary(careerEntries),
+      tidyMultiline(formatCareerSummary(careerEntries)),
       row.careerDetails,
       EMPTY_VALUE
     );
