@@ -23,17 +23,21 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Setup Node
-        uses: actions/setup-node@v5
+        uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
 
       - name: Install dependencies
+ codex/review-interviewee-profile-program-for-errors-7guwom
         run: |
           npm install --no-audit --no-fund || npm install --legacy-peer-deps --no-audit --no-fund
+
+        run: npm ci
+ main
 
       - name: Build
         env:
