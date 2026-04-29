@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:rules": "node --test tests/parser-rules.test.mjs",
+    "test:rules": "node --test tests/*.test.mjs",
     "batch:parse": "node scripts/batch-parse.mjs",
     "check": "npm run lint && npm run build"
   },

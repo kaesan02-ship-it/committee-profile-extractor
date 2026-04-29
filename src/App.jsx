@@ -2,6 +2,11 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import JSZip from 'jszip';
 import { useDropzone } from 'react-dropzone';
 import { EMPTY_VALUE, parsePptxProfile } from './lib/pptProfileParser';
+import {
+  formatCareerForTemplate,
+  formatEducationForTemplate,
+  formatEvaluationCareerForTemplate,
+} from './lib/profileExcelFormatter';
 
 const normalizeRelativePath = (relativePath = '', fallbackName = '') => {
   const normalized = String(relativePath || '')
@@ -28,11 +33,6 @@ const createUploadItem = (file, relativePath = '') => {
 const normalizeText = (value = '') => {
   const text = String(value ?? '').trim();
   return text && text !== EMPTY_VALUE ? text : EMPTY_VALUE;
-};
-
-const isEmptyValue = (value = '') => {
-  const text = String(value ?? '').trim();
-  return !text || text === EMPTY_VALUE;
 };
 
 const normalizeMultiline = (value = '') => {
@@ -78,79 +78,6 @@ const formatBirthForTemplate = (birth = '') => {
 const formatAgeForTemplate = (age = '') => {
   const digits = String(age ?? '').replace(/\D/g, '');
   return digits || '';
-};
-
-const toLines = (value = '') => {
-  return String(value ?? '')
-    .split(/\n+/)
-    .map((line) => line.trim())
-    .filter((line) => line && line !== EMPTY_VALUE);
-};
-
-const formatEducationForTemplate = (educationDetails = '', education = '') => {
-  const source = toLines(educationDetails).length ? educationDetails : education;
-  if (isEmptyValue(source)) return '';
-  return bulletizeMultiline(source).replaceAll('•', '●');
-};
-
-const formatCareerForTemplate = (row) => {
-  const careerLines = toLines(row.careerDetails || row.career)
-    .filter((line) => !/(서류|면접|평가)\s*경력|^\[?\s*(서류|면접)\s*\]?/i.test(line));
-  if (!careerLines.length) return '';
-
-  const currentLine = careerLines.find((line) => /(現|현재|현)/.test(line));
-  const previousLines = careerLines.filter((line) => !/(現|현재|현)/.test(line)).slice(0, 3);
-
-  const lines = [];
-
-  if (currentLine) {
-    lines.push(currentLine.replace(/^(?:現|현재|현)\s*[:)：.)-]?\s*/i, '現) '));
-  } else if (row.affiliation && row.affiliation !== EMPTY_VALUE) {
-    lines.push(`現) ${row.affiliation}`);
-  }
-
-  previousLines.forEach((line) => {
-    lines.push(line.replace(/^(?:前|전)\s*[:)：.)-]?\s*/i, '前) '));
-  });
-
-  return lines.slice(0, 4).join('\n');
-};
-
-const formatEvaluationCareerForTemplate = (row) => {
-  const baseText = String(row.careerRaw || row.careerDetails || row.career || '');
-  if (isEmptyValue(baseText)) return '';
-
-  const tokens = baseText
-    .split(/\n+|(?<=[.。;；])\s+/)
-    .map((token) => token.trim())
-    .filter(Boolean);
-
-  const docs = [];
-  const interviews = [];
-  const etc = [];
-
-  tokens.forEach((line) => {
-    if (/(서류|문서|정량)/.test(line)) {
-      docs.push(line.replace(/^\[?\s*서류\s*\]?\s*/i, '').trim());
-      return;
-    }
-    if (/(면접|인터뷰)/.test(line)) {
-      interviews.push(line.replace(/^\[?\s*면접\s*\]?\s*/i, '').trim());
-      return;
-    }
-    if (/(평가)/.test(line)) {
-      etc.push(line);
-    }
-  });
-
-  const unique = (arr) => [...new Set(arr.filter(Boolean))];
-  const lines = [];
-
-  if (docs.length) lines.push(`[서류] ${unique(docs).slice(0, 3).join(', ')}`);
-  if (interviews.length) lines.push(`[면접] ${unique(interviews).slice(0, 3).join(', ')}`);
-  if (!lines.length && etc.length) lines.push(unique(etc).slice(0, 2).join(' / '));
-
-  return lines.join('\n');
 };
 
 const getLineCount = (...values) => {
