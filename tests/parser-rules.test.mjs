@@ -101,6 +101,35 @@ test('splitEducationRecords carries slash shorthand degree context', () => {
   assert.equal(__testing.extractHighestEducation(records), '경희대학교 관광경영학 박사 졸');
 });
 
+test('splitEducationRecords removes numbering and keeps education context', () => {
+  const records = __testing.splitEducationRecords('1. 경희대학교 컴퓨터공학과 학사 2. 경희대학교 컴퓨터공학과 석사 3. 경희대학교 컴퓨터공학과 박사 졸');
+
+  assert.deepEqual(records, [
+    '경희대학교 컴퓨터공학과 학사',
+    '경희대학교 컴퓨터공학과 석사',
+    '경희대학교 컴퓨터공학과 박사 졸',
+  ]);
+  assert.equal(__testing.extractHighestEducation(records), '경희대학교 컴퓨터공학과 박사 졸');
+});
+
+test('splitEducationRecords moves leading degree labels after the school context', () => {
+  const records = __testing.splitEducationRecords('학사 경희대학교 컴퓨터공학과 졸업 석사 경희대학교 컴퓨터공학과 졸업 박사 경희대학교 컴퓨터공학과 졸업');
+
+  assert.deepEqual(records, [
+    '경희대학교 컴퓨터공학과 학사',
+    '경희대학교 컴퓨터공학과 석사',
+    '경희대학교 컴퓨터공학과 박사',
+  ]);
+  assert.equal(__testing.extractHighestEducation(records), '경희대학교 컴퓨터공학과 박사');
+});
+
+test('splitEducationRecords keeps context when doctorate completion appears before school', () => {
+  const records = __testing.splitEducationRecords('박사 수료 서울대학교 컴퓨터공학과');
+
+  assert.deepEqual(records, ['서울대학교 컴퓨터공학과 박사수료']);
+  assert.equal(__testing.extractHighestEducation(records), '서울대학교 컴퓨터공학과 박사수료');
+});
+
 test('chooseAffiliation keeps current-career position when explicit affiliation is organization-only', () => {
   assert.equal(
     __testing.chooseAffiliation(

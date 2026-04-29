@@ -163,6 +163,34 @@ const compactEvaluationList = (value = '') => {
   return `${cleaned.slice(0, 177).trim()}...`;
 };
 
+const extractGenericEvaluationActivities = (texts = []) => {
+  const genericPattern = /(채용\s*평가\s*위원|채용평가위원|채용\s*심사|채용심사|채용\s*전문\s*면접관|채용전문면접관|전문\s*면접관|전문면접관|공공기관[^,]{0,20}면접관|채용컨설팅\s*및\s*면접관|면접\s*평가\s*위원|면접\s*심사|서류\s*평가|평가위원)/;
+
+  const candidates = texts
+    .flatMap((text) => String(text ?? '')
+        .replace(/\n+/g, ' ')
+        .split(/\s+(?=(?:現|前|현|전)\s)|\s*[•■□▷▶*]\s*/))
+    .map((line) => cleanupEntry(line).replace(/^(?:및\s*)?(?:주요이력|주요경력|경력사항)\s*/i, ''))
+    .filter((line) => line && genericPattern.test(line))
+    .filter((line) => !/(?:면접관련|면접관\s*Profile|채용전문가\s*\d*\s*급?\s*과정\s*수료|과정\s*수료)/i.test(line))
+    .map((line) => {
+      if (line.length <= 120) return line;
+      const match = line.match(genericPattern);
+      const index = match?.index ?? 0;
+      const start = Math.max(0, index - 45);
+      const end = Math.min(line.length, index + 90);
+      return `${start > 0 ? '...' : ''}${line.slice(start, end).trim()}${end < line.length ? '...' : ''}`;
+    });
+
+  const seen = [];
+  return candidates.sort((a, b) => a.length - b.length).filter((candidate) => {
+    const key = candidate.replace(/^\.\.\./, '').replace(/\.\.\.$/, '').replace(/[^\p{L}\p{N}]+/gu, '');
+    if (seen.some((seenKey) => seenKey.includes(key) || key.includes(seenKey))) return false;
+    seen.push(key);
+    return true;
+  }).slice(0, 4);
+};
+
 export const formatEvaluationCareerForTemplate = (row = {}) => {
   const sourceTexts = unique([
     row.evaluationRaw,
@@ -180,6 +208,11 @@ export const formatEvaluationCareerForTemplate = (row = {}) => {
       groups.get(key).push(compactEvaluationList(body));
     });
   });
+
+  if (!groups.size) {
+    const genericActivities = extractGenericEvaluationActivities(sourceTexts);
+    if (genericActivities.length) groups.set('심사', genericActivities);
+  }
 
   const lines = [];
   ['서류', '면접', '심사', '자문'].forEach((label) => {

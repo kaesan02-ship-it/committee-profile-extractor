@@ -173,7 +173,7 @@ const compactEducationSpacing = (text = '') => {
 const prepareEducationSource = (text = '') => {
   return compactEducationSpacing(text)
     .replace(/(?<=[가-힣A-Za-z])(?=\[(?:학사|석사|박사|전문학사|박사수료|박사과정수료)|\((?:학사|석사|박사|전문학사|박사수료|박사과정수료))/g, ' ')
-    .replace(/(학사|석사|박사|전문학사|박사수료|박사과정수료|석박사\s*통합)\s*(?=(?:[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School)))/g, '$1\n')
+    .replace(/\s+(?=(?:학사|석사|박사|전문학사|박사\s*수료|박사수료|박사과정수료|석박사\s*통합)\s+(?:[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School)))/g, '\n')
     .replace(/([\])}])\s*(?=(?:[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School)))/g, '$1\n')
     .replace(/\s*[,;/]\s*(?=(?:[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School)|\[|\())/g, '\n')
     .replace(/[ \t]{2,}/g, ' ')
@@ -382,16 +382,28 @@ const truncateAtLooseKeyword = (text = '', keywords = []) => {
 const normalizeEducationRecord = (line = '') => {
   let value = compactEducationSpacing(line)
     .replace(EDUCATION_NOISE_PATTERN, '')
+    .replace(/^\d+\s*[.)]\s*/, '')
     .replace(/^(?:학사|석사|박사|전문학사)\s*[:：]\s*/i, '')
     .replace(/^[-•■□▷▶*]+\s*/, '')
     .replace(/^[\])}\s]+/, '')
     .replace(/[([{]\s*$/, '')
     .replace(/[,:;]\s*$/g, '')
     .replace(/-\s*$/g, '')
+    .replace(/\s+(?:졸업|졸)\s+(?=학사|석사|박사|전문학사)/g, ' ')
     .replace(/\s{2,}/g, ' ')
     .trim();
 
   value = value.replace(/^,\s*/, '').replace(/,\s*$/, '').trim();
+
+  const leadingDegree = value.match(/^(박사\s*수료|박사수료|박사과정수료|박사과정|석박사\s*통합|석박사통합|전문학사|박사|석사|학사)\s+(.+)$/i);
+  if (
+    leadingDegree?.[1] &&
+    leadingDegree?.[2] &&
+    /(대학교|대학원|대학|교육원|University|College|School|Institute|학과|학부|전공)/i.test(leadingDegree[2])
+  ) {
+    value = `${leadingDegree[2].replace(/\s*(?:졸업|졸)\s*$/i, '').trim()} ${normalizeDegreeLabel(leadingDegree[1])}`.trim();
+  }
+
   return value;
 };
 
@@ -583,7 +595,7 @@ const cleanupEducationFragment = (segment = '') => {
 
 const extractDegreeAnchoredSegments = (text = '') => {
   const degreePattern = [...EDUCATION_DEGREE_KEYWORDS, '석박사 통합'].map(escapeRegex).join('|');
-  const degreeAnchoredRegex = new RegExp(`[^\\n,;]+?(?:${degreePattern})(?:\\s*(?:졸업|수료|재학|취득|예정))?`, 'gi');
+  const degreeAnchoredRegex = new RegExp(`[^\\n,;]+?(?:${degreePattern})(?:\\s*(?:졸업|졸|수료|재학|취득|예정))?`, 'gi');
   const source = prepareEducationSource(text);
   const seeds = source
     .split(/\n+/)
@@ -761,6 +773,8 @@ const canonicalizeSingleEducationRecord = (record = '') => {
     value = normalizeEducationRecord(carriedContextMatch[2]);
   }
 
+  value = value.replace(/\s+\/\s+/g, ' ');
+
   return value;
 };
 
@@ -928,7 +942,30 @@ const splitEducationRecords = (text = '') => {
     if (!prev || record.length > prev.length) canonicalBest.set(key, record);
   });
 
-  return uniq([...canonicalBest.values()]).filter(Boolean);
+  const sourceOrderKey = normalizeEducationRecord(prepareEducationSource(text))
+    .toLowerCase()
+    .replace(/[\s()[\]{}.,·/:-]/g, '');
+  const sourceIndex = (record = '') => {
+    const key = educationCanonicalKey(record);
+    const index = sourceOrderKey.indexOf(key);
+    if (index >= 0) return index;
+    const context = educationCanonicalKey(extractEducationContext(record));
+    return context ? sourceOrderKey.indexOf(context) : -1;
+  };
+
+  return uniq([...canonicalBest.values()])
+    .filter(Boolean)
+    .sort((a, b) => {
+      const aContext = educationCanonicalKey(extractEducationContext(a));
+      const bContext = educationCanonicalKey(extractEducationContext(b));
+      if (aContext && aContext === bContext) return degreeRank(a) - degreeRank(b);
+      const aIndex = sourceIndex(a);
+      const bIndex = sourceIndex(b);
+      if (aIndex >= 0 && bIndex >= 0 && aIndex !== bIndex) return aIndex - bIndex;
+      if (aIndex >= 0 && bIndex < 0) return -1;
+      if (aIndex < 0 && bIndex >= 0) return 1;
+      return degreeRank(a) - degreeRank(b);
+    });
 };
 
 const extractHighestEducation = (records = []) => {

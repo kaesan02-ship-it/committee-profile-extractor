@@ -117,6 +117,14 @@ test('formatEvaluationCareerForTemplate ignores bare document words in descripti
   assert.equal(formatted, '[심사] K-water AI 면접, 농협 AI 개발자 면접, 농협 개발 경력자 서류 평가, 한국전력 IT 직군 등');
 });
 
+test('formatEvaluationCareerForTemplate summarizes generic evaluation activities', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '現 코리아에이치알디솔루션 대표 現 강원특별자치도 공무원 면접 평가위원 (2023년~현재) 現 한국 HR 진단평가센터 공공기관 채용 평가위원 (2019년~현재)',
+  });
+
+  assert.equal(formatted, '[심사] 現 강원특별자치도 공무원 면접 평가위원 (2023년~현재), 現 한국 HR 진단평가센터 공공기관 채용 평가위원 (2019년~현재)');
+});
+
 test('formatCareerForTemplate excludes explicit evaluation blocks from career summary', () => {
   const formatted = formatCareerForTemplate({
     affiliation: 'HR 임팩트 대표',
