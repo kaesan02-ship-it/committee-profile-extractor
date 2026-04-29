@@ -94,9 +94,9 @@ export const CAREER_START_PATTERN = /^(?:\d{4}(?:\s*[.]\s*\d{1,2})?\s*[~∼〜-]
 export const DEGREE_PATTERNS = [
   { rank: 4.8, regex: /석박사\s*통합|통합\s*석박사/i },
   { rank: 4.6, regex: /박사과정수료|박사수료/i },
-  { rank: 5, regex: /박사|Ph\.?D|Doctor/i },
-  { rank: 3, regex: /석사|M\.?A|M\.?S|MBA/i },
-  { rank: 2, regex: /학사|B\.?A|B\.?S|대학교\s*졸업/i },
+  { rank: 5, regex: /박사|\bPh\.?\s*D\b|\bDoctor\b/i },
+  { rank: 3, regex: /석사|\bM\.?\s*A\b|\bM\.?\s*S\b|\bMBA\b/i },
+  { rank: 2, regex: /학사|\bB\.?\s*A\b|\bB\.?\s*S\b|대학교\s*졸업/i },
   { rank: 1, regex: /전문학사|전문대/i },
 ];
 

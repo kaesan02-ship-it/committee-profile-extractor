@@ -48,6 +48,35 @@ test('sanitizeAffiliation removes contact and open-ended date tails', () => {
   assert.equal(__testing.sanitizeAffiliation('한국중소기업금융협회 본부장'), '한국중소기업금융협회 본부장');
 });
 
+test('splitEducationRecords removes combined mixed-degree fallback records', () => {
+  const records = __testing.splitEducationRecords('한국외국어대학교 이란어 / 경영학 (부) 학사 한양사이버대학원 IT MBA 석사');
+
+  assert.deepEqual(records, [
+    '한국외국어대학교 이란어 경영학 (부) 학사',
+    '한양사이버대학원 IT MBA 석사',
+  ]);
+  assert.equal(__testing.extractHighestEducation(records), '한양사이버대학원 IT MBA 석사');
+});
+
+test('extractHighestEducation prefers the highest degree over a longer foreign-school lower degree', () => {
+  const records = __testing.splitEducationRecords(
+    '연세대학원 정보미디어 석사 Macarthur Community College (ITTI) / Information Technology Diploma 학사'
+  );
+
+  assert.deepEqual(records, [
+    '연세대학원 정보미디어 석사',
+    'Macarthur Community College (ITTI) Information Technology Diploma 학사',
+  ]);
+  assert.equal(__testing.extractHighestEducation(records), '연세대학원 정보미디어 석사');
+});
+
+test('splitEducationRecords treats leading degree labels as labels, not extra degrees', () => {
+  const records = __testing.splitEducationRecords('박사 : 한양대학교 컴퓨터공학 박사수료');
+
+  assert.deepEqual(records, ['한양대학교 컴퓨터공학 박사수료']);
+  assert.equal(__testing.extractHighestEducation(records), '한양대학교 컴퓨터공학 박사수료');
+});
+
 test('tagSuspiciousProfile flags missing fields for review', () => {
   const tags = tagSuspiciousProfile({
     phone: EMPTY_VALUE,
