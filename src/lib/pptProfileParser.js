@@ -16,8 +16,9 @@ import {
   SECTION_STOP_HEADERS,
 } from './extractionRules.js';
 
-const PHONE_PATTERN = /0\s*1\s*[016789][\s./-]*\d[\s\d]{2,3}[\s./-]*\d[\s\d]{3}/;
-const PHONE_DIGIT_PATTERN = /01[016789]\d{7,8}/;
+const PHONE_PATTERN = /(?:^|[^\d])((?:\+?82[\s./-]?)?0?1[016789](?:[\s./-]?\d){7,8})(?=$|[^\d])/g;
+const PHONE_CONTEXT_PATTERN = /(연락처|연락|휴대전화|휴대폰|핸드폰|전화번호|mobile|phone|tel)/i;
+const PHONE_FORMATTED_PATTERN = /(?:\+?82[\s./-]?)?0?1[016789][\s./-]+\d{3,4}[\s./-]+\d{4}/i;
 const EMAIL_PATTERN = /[a-zA-Z0-9._%+-]+\s*@\s*(?:[a-zA-Z0-9-]+\s*\.\s*)+[a-zA-Z]{2,}/;
 const EMAIL_PATTERN_GLOBAL = new RegExp(EMAIL_PATTERN.source, 'g');
 const DEGREE_PATTERN_GLOBAL = /(?:박사과정수료|박사수료|석박사\s*통합|석박사통합|박사|석사|학사|전문학사|Ph\.?D|Doctor|MBA|M\.?A|M\.?S|B\.?A|B\.?S)/i;
@@ -217,19 +218,53 @@ const extractEmail = (text = '') => {
   return match ? normalizeEmail(match[0]) : '';
 };
 
-const extractPhone = (text = '') => {
-  const match = text.match(PHONE_PATTERN);
-  if (match) {
-    const digits = match[0].replace(/\D/g, '');
-    if (digits.length >= 10 && digits.length <= 11) {
-      return digits.replace(/(\d{3})(\d{3,4})(\d{4})/, '$1-$2-$3');
-    }
+const normalizePhoneDigits = (raw = '') => {
+  let digits = String(raw).replace(/\D/g, '');
+  if (digits.startsWith('82') && digits[2] === '1') {
+    digits = `0${digits.slice(2)}`;
+  }
+  return digits;
+};
+
+const isValidMobileDigits = (digits = '') => {
+  if (!/^01[016789]\d{7,8}$/.test(digits)) return false;
+  if (/^(\d)\1+$/.test(digits)) return false;
+
+  const middle = digits.length === 11 ? digits.slice(3, 7) : digits.slice(3, 6);
+  const last = digits.slice(-4);
+  return !/^(\d)\1+$/.test(middle) && !/^(\d)\1+$/.test(last);
+};
+
+const hasPhoneContext = (text = '', index = -1) => {
+  const source = cleanInline(text);
+  if (index < 0) return PHONE_CONTEXT_PATTERN.test(source);
+
+  const start = Math.max(0, index - 24);
+  const end = Math.min(source.length, index + 36);
+  return PHONE_CONTEXT_PATTERN.test(source.slice(start, end));
+};
+
+const formatPhoneDigits = (digits = '') => digits.replace(/(\d{3})(\d{3,4})(\d{4})/, '$1-$2-$3');
+
+const extractPhone = (text = '', options = {}) => {
+  const { requireContext = false } = options;
+  const source = cleanInline(text);
+
+  for (const match of source.matchAll(PHONE_PATTERN)) {
+    const raw = match[1] || '';
+    const digits = normalizePhoneDigits(raw);
+    if (!isValidMobileDigits(digits)) continue;
+
+    const formatted = PHONE_FORMATTED_PATTERN.test(raw);
+    if (requireContext && !formatted && !hasPhoneContext(source, match.index ?? -1)) continue;
+
+    return formatPhoneDigits(digits);
   }
 
-  const fallback = text.replace(/\D/g, '').match(PHONE_DIGIT_PATTERN);
-  if (fallback) return fallback[0].replace(/(\d{3})(\d{3,4})(\d{4})/, '$1-$2-$3');
   return '';
 };
+
+const stripPhoneCandidates = (text = '') => cleanInline(text).replace(PHONE_PATTERN, ' ');
 
 const isValidBirthParts = (year, month, day) => {
   const y = Number(year);
@@ -268,7 +303,9 @@ const extractBirth = (text = '') => {
 };
 
 const extractGender = (text = '') => {
-  const inline = cleanInline(text);
+  const inline = cleanInline(text)
+    .replace(/성별\s*(?:\([^)]*(?:남\s*[/·]\s*여|남녀)[^)]*\)|[:：]?\s*(?:남\s*[/·]\s*여|남녀구분))/gi, '성별 ')
+    .replace(/남\s*(?:or|[/·])\s*여/gi, ' ');
   const normalized = inline.replace(/\s/g, '');
 
   const contextMatch = inline.match(/(?:성별|남녀|gender)\s*[:：]?\s*(남성|여성|남자|여자|남|여|男|女)/i);
@@ -918,6 +955,26 @@ const AFFILIATION_FALSE_EDUCATION_PATTERN = /(학사|석사|박사|전문학사|
 const AFFILIATION_ORG_PATTERN = /(대학교|대학원|대학|연구원|연구소|센터|병원|재단|법인|회사|기업|공사|공단|기관|캠퍼스)/i;
 const AFFILIATION_DEPARTMENT_PATTERN = /(학과|학부|전공|연구소|센터|본부|실|팀|과|처|부)/i;
 const AFFILIATION_MEMBERSHIP_PATTERN = /((?:한국|대한|국제|미국|세계|IEEE|ICROS|KSME|KICS|ACS|AIChE)[^()]{0,30}?(?:학회|협회|위원회|연구회)|정회원|종신회원|상임이사|부회장|사업이사|자문위원|평가위원|심사위원|선정위원|운영위원)/i;
+const AFFILIATION_HEADER_NOISE_PATTERN = /(위원\s*성명|성명|생년월일|출생년월일|성별|전문분야|최종학력|학력|주요경력|경력|연락처|이메일|주소)/i;
+const AFFILIATION_MIN_SCORE = 5;
+
+const hasAffiliationSignal = (line = '') => (
+  hasAffiliationHint(line) ||
+  hasPosition(line) ||
+  AFFILIATION_ORG_PATTERN.test(line) ||
+  AFFILIATION_DEPARTMENT_PATTERN.test(line)
+);
+
+const isReviewableAffiliation = (value = '') => {
+  const cleaned = cleanInline(value);
+  if (!cleaned || cleaned === EMPTY_VALUE) return false;
+  if (cleaned.length < 3 || cleaned.length > 70) return false;
+  if (AFFILIATION_HEADER_NOISE_PATTERN.test(cleaned)) return false;
+  if (AFFILIATION_FALSE_EDUCATION_PATTERN.test(cleaned)) return false;
+  if (CONTACT_NOISE_PATTERN.test(cleaned) || extractEmail(cleaned) || extractPhone(cleaned)) return false;
+  if (!hasAffiliationSignal(cleaned)) return false;
+  return true;
+};
 
 const AFFILIATION_POSITION_SOURCE = POSITION_HINTS.slice()
   .sort((a, b) => b.length - a.length)
@@ -997,7 +1054,7 @@ const splitCurrentCareerSegments = (text = '') => {
 };
 
 const sanitizeAffiliation = (text = '') => {
-  let value = normalizeAffiliationSpacing(text);
+  let value = normalizeAffiliationSpacing(stripPhoneCandidates(text));
   if (!value) return '';
 
   value = value
@@ -1006,8 +1063,6 @@ const sanitizeAffiliation = (text = '') => {
     .replace(PREVIOUS_PREFIX_PATTERN, '')
     .replace(DATE_RANGE_PREFIX_PATTERN, '')
     .replace(EMAIL_PATTERN_GLOBAL, ' ')
-    .replace(PHONE_PATTERN, ' ')
-    .replace(/\b01[016789]\d{7,8}\b/g, ' ')
     .replace(/\(\s*이메일[^)]*\)/gi, ' ')
     .replace(/\(\s*연락처[^)]*\)/gi, ' ')
     .replace(/(?:핸드폰번호|메일주소|이메일|연락처|휴대폰|휴대전화)\s*[:：]?\s*.*$/i, ' ')
@@ -1037,6 +1092,7 @@ const scoreAffiliationCandidate = (line = '', source = 'affiliation') => {
   if (!value) return -999;
 
   let score = 0;
+  const hasSignal = hasAffiliationSignal(value);
   if (source === 'career-current') score += 6;
   if (hasCurrentMarker(line)) score += 4;
   if (hasAffiliationHint(value)) score += 3;
@@ -1044,7 +1100,10 @@ const scoreAffiliationCandidate = (line = '', source = 'affiliation') => {
   if (AFFILIATION_DEPARTMENT_PATTERN.test(value)) score += 3;
   if (hasPosition(value)) score += 5;
   if (value.length >= 8 && value.length <= 40) score += 3;
+  if (value.length < 3) score -= 5;
   if (value.length > 55) score -= 5;
+  if (!hasSignal) score -= 6;
+  if (AFFILIATION_HEADER_NOISE_PATTERN.test(value)) score -= 6;
   if (CONTACT_NOISE_PATTERN.test(value) || extractEmail(value) || extractPhone(value)) score -= 5;
   if (AFFILIATION_FALSE_EDUCATION_PATTERN.test(value)) score -= 4;
   if (AFFILIATION_MEMBERSHIP_PATTERN.test(value)) score -= 8;
@@ -1141,6 +1200,7 @@ const chooseAffiliation = (affiliationText = '', careerText = '') => {
       const [source, value] = key.split('::');
       return { value, source, score: scoreAffiliationCandidate(value, source) };
     })
+    .filter(({ value, score }) => score >= AFFILIATION_MIN_SCORE && isReviewableAffiliation(value))
     .sort(
       (a, b) =>
         b.score - a.score ||
@@ -1245,6 +1305,54 @@ const extractNodesAndText = async (zip) => {
   return { allNodes, allText };
 };
 
+const isMissingValue = (value = '') => {
+  const cleaned = cleanInline(value);
+  return !cleaned || cleaned === EMPTY_VALUE;
+};
+
+const hasSuspiciousPhone = (value = '') => {
+  if (isMissingValue(value)) return false;
+  const digits = normalizePhoneDigits(value);
+  return !isValidMobileDigits(digits) || formatPhoneDigits(digits) !== cleanInline(value);
+};
+
+const isWeakEducation = (row = {}) => {
+  if (isMissingValue(row.education)) return true;
+  if (!DEGREE_PATTERN_GLOBAL.test(row.education)) return true;
+  if (isStandaloneDegreeRecord(row.education) && !row.educationList?.some((item) => !isStandaloneDegreeRecord(item))) return true;
+  return false;
+};
+
+export const tagSuspiciousProfile = (row = {}) => {
+  const tags = [];
+
+  if (row.error) tags.push('parse_error');
+
+  if (isMissingValue(row.phone)) {
+    tags.push('phone_missing');
+  } else if (hasSuspiciousPhone(row.phone)) {
+    tags.push('phone_suspicious');
+  }
+
+  if (isMissingValue(row.affiliation)) {
+    tags.push('affiliation_missing');
+  } else if (!isReviewableAffiliation(row.affiliation)) {
+    tags.push('affiliation_review');
+  }
+
+  if (isWeakEducation(row)) {
+    tags.push('education_review');
+  }
+
+  if (isMissingValue(row.gender)) {
+    tags.push('gender_missing');
+  } else if (!/^(남|여)$/.test(cleanInline(row.gender))) {
+    tags.push('gender_review');
+  }
+
+  return tags;
+};
+
 export const createEmptyProfile = (fileName = '') => ({
   fileName,
   name: '',
@@ -1263,6 +1371,7 @@ export const createEmptyProfile = (fileName = '') => ({
   careerRaw: '',
   careerDetails: '',
   careerList: [],
+  reviewTags: [],
   error: false,
 });
 
@@ -1272,7 +1381,6 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
   try {
     const zip = await JSZip.loadAsync(input);
     const { allNodes, allText } = await extractNodesAndText(zip);
-    const joinedText = allNodes.join(' ');
     const row = createEmptyProfile(fileName);
 
     row.name = firstNonEmpty(
@@ -1296,7 +1404,7 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
 
     row.phone = firstNonEmpty(
       findLabeledValue(allNodes, FIELD_LABELS.phone, { lookAhead: 12, validator: extractPhone }),
-      extractPhone(allText),
+      extractPhone(allText, { requireContext: true }),
       EMPTY_VALUE
     );
 
@@ -1314,12 +1422,10 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
 
     const affiliationBody = firstNonEmpty(
       findSectionBody(allText, FIELD_LABELS.affiliation, SECTION_STOP_HEADERS.affiliation),
-      findLabeledValue(allNodes, FIELD_LABELS.affiliation, { lookAhead: 10, validator: sanitizeAffiliation }),
-      joinedText
+      findLabeledValue(allNodes, FIELD_LABELS.affiliation, { lookAhead: 10, validator: sanitizeAffiliation })
     );
     row.affiliation = firstNonEmpty(
       chooseAffiliation(affiliationBody, careerBody),
-      sanitizeAffiliation(affiliationBody),
       EMPTY_VALUE
     );
 
@@ -1353,12 +1459,14 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
       EMPTY_VALUE
     );
     row.age = row.birth !== EMPTY_VALUE ? calcAge(row.birth) : EMPTY_VALUE;
+    row.reviewTags = tagSuspiciousProfile(row);
 
     return row;
   } catch {
     return {
       ...fallback,
       name: '오류',
+      reviewTags: ['parse_error'],
       error: true,
     };
   }
@@ -1366,6 +1474,14 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
 
 export const parsePptxProfile = async (file) => {
   return parsePptxProfileInput(file, file?.name || '');
+};
+
+export const __testing = {
+  chooseAffiliation,
+  extractGender,
+  extractPhone,
+  sanitizeAffiliation,
+  tagSuspiciousProfile,
 };
 
 export { EMPTY_VALUE };

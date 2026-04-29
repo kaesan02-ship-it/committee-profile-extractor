@@ -65,6 +65,21 @@ npm run build
 npm run preview
 ```
 
+## 배치 검수 / 비교 리포트
+
+PPTX ZIP, 폴더, 단일 PPTX, 공개 다운로드 URL을 CLI로 한 번에 파싱할 수 있습니다.
+
+```bash
+npm run batch:parse -- --input sample-ppts.zip --out reports/run
+npm run batch:parse -- --input sample-ppts.zip --ground-truth ground_truth.csv --before current_results.xlsx
+```
+
+출력 파일:
+
+- `parsed_results.csv/json`: 최신 추출 결과
+- `qa_flags.csv`: 연락처/소속/학력/성별 검수 태그가 있는 행
+- `comparison_report.md`: ground truth가 있으면 field별 precision 전/후 비교와 대표 실패/변경 케이스 20건
+
 ## GitHub Pages 배포
 
 ### 1. 저장소명 확인

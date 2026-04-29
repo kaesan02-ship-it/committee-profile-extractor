@@ -45,6 +45,11 @@ const normalizeMultiline = (value = '') => {
     .join('\n');
 };
 
+const normalizeReviewTags = (tags = []) => {
+  if (!Array.isArray(tags) || !tags.length) return EMPTY_VALUE;
+  return tags.join(', ');
+};
+
 const bulletizeMultiline = (value = '') => {
   const text = normalizeMultiline(value);
   if (text === EMPTY_VALUE) return EMPTY_VALUE;
@@ -237,6 +242,7 @@ const buildWorkbook = async (files, results) => {
     { header: '파일명', key: 'fileName', width: 28 },
     { header: '원본폴더', key: 'sourceFolder', width: 20 },
     { header: '원본상대경로', key: 'sourceRelativePath', width: 42 },
+    { header: '검수태그', key: 'reviewTags', width: 34 },
     { header: '위원 성명', key: 'name', width: 14 },
     { header: '성별', key: 'gender', width: 10 },
     { header: '출생년월일', key: 'birth', width: 16 },
@@ -257,6 +263,7 @@ const buildWorkbook = async (files, results) => {
       fileName: normalizeText(row.fileName),
       sourceFolder: normalizeText(row.sourceFolder),
       sourceRelativePath: normalizeText(row.sourceRelativePath),
+      reviewTags: normalizeReviewTags(row.reviewTags),
       name: normalizeText(row.name),
       gender: normalizeText(row.gender),
       birth: normalizeText(row.birth),
@@ -324,6 +331,8 @@ const buildWorkbook = async (files, results) => {
     { label: '총 파일 수', value: files.length },
     { label: '정상 추출 수', value: results.filter((row) => !row.error).length },
     { label: '오류 수', value: results.filter((row) => row.error).length },
+    { label: '검수 필요 수', value: results.filter((row) => row.reviewTags?.length).length },
+    { label: '검수 태그', value: normalizeReviewTags([...new Set(results.flatMap((row) => row.reviewTags || []))]) },
     { label: '생성일시', value: new Date().toLocaleString('ko-KR') },
     { label: '서식 메모', value: '학력상세/경력상세는 줄바꿈 + 글머리표로 저장됩니다.' },
   ];
@@ -656,6 +665,7 @@ function App() {
                   <tr>
                     <th>원본폴더</th>
                     <th>원본상대경로</th>
+                    <th>검수태그</th>
                     <th>성명</th>
                     <th>현소속</th>
                     <th>최종학력</th>
@@ -668,6 +678,7 @@ function App() {
                     <tr key={`${row.fileName}-${index}`}>
                       <td>{row.sourceFolder || EMPTY_VALUE}</td>
                       <td style={{ minWidth: '220px' }}>{row.sourceRelativePath || EMPTY_VALUE}</td>
+                      <td style={{ minWidth: '180px' }}>{normalizeReviewTags(row.reviewTags)}</td>
                       <td>{row.name || EMPTY_VALUE}</td>
                       <td style={{ minWidth: '220px' }}>{row.affiliation || EMPTY_VALUE}</td>
                       <td style={{ minWidth: '220px' }}>{row.education || EMPTY_VALUE}</td>
