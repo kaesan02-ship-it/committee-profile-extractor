@@ -198,7 +198,7 @@ export const formatEvaluationCareerForTemplate = (row = {}) => {
     row.careerDetails,
     row.career,
   ].map((value) => String(value ?? '')).filter((value) => !isEmptyValue(value)));
-  if (!sourceTexts.length) return '';
+  if (!sourceTexts.length) return '[미기재] 평가이력 별도 기재 없음';
 
   const groups = new Map();
   sourceTexts.forEach((sourceText) => {
@@ -220,7 +220,7 @@ export const formatEvaluationCareerForTemplate = (row = {}) => {
     if (values.length) lines.push(`[${label}] ${values.join(', ')}`);
   });
 
-  return lines.join('\n');
+  return lines.length ? lines.join('\n') : '[미기재] 평가이력 별도 기재 없음';
 };
 
 export const __testing = {

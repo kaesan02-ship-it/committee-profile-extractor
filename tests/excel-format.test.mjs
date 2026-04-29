@@ -37,7 +37,7 @@ test('formatEvaluationCareerForTemplate ignores parenthetical interview noise', 
     formatEvaluationCareerForTemplate({
       careerDetails: '現 세명대학교 교수 前 경희대학교 교수 (면접, 프로젝트 등)',
     }),
-    ''
+    '[미기재] 평가이력 별도 기재 없음'
   );
 });
 
@@ -123,6 +123,10 @@ test('formatEvaluationCareerForTemplate summarizes generic evaluation activities
   });
 
   assert.equal(formatted, '[심사] 現 강원특별자치도 공무원 면접 평가위원 (2023년~현재), 現 한국 HR 진단평가센터 공공기관 채용 평가위원 (2019년~현재)');
+});
+
+test('formatEvaluationCareerForTemplate fills rows with no evaluation evidence', () => {
+  assert.equal(formatEvaluationCareerForTemplate({}), '[미기재] 평가이력 별도 기재 없음');
 });
 
 test('formatCareerForTemplate excludes explicit evaluation blocks from career summary', () => {
