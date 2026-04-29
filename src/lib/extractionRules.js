@@ -33,6 +33,7 @@ export const FIELD_LABELS = {
     '핵심역량',
   ],
   career: ['주요경력', '주요 경력', '주요이력', '주요 이력', '경력사항', '경력'],
+  evaluation: ['수행실적', '수행 실적', '주요실적', '주요 실적', '면접관 수행실적', '면접관련 수행실적'],
 };
 
 export const SECTION_STOP_HEADERS = {

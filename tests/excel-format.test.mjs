@@ -85,6 +85,38 @@ test('formatEvaluationCareerForTemplate cleans category prefixes from evaluation
   ].join('\n'));
 });
 
+test('formatEvaluationCareerForTemplate uses evaluationRaw from performance sections', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    careerRaw: '現 한국 NCS 연구소 이사 (2015. 03~현재)',
+    evaluationRaw: '[서류평가] 국민건강보험공단, 기술보증기금, 부산항만공사, 사립학교교직원연금공단, 산업은행 [면접평가] 강원랜드, 광주은행, 건설공제조합, 국민건강보험공단, 국방기술진흥연구소',
+  });
+
+  assert.equal(formatted, [
+    '[서류] 국민건강보험공단, 기술보증기금, 부산항만공사, 사립학교교직원연금공단 등',
+    '[면접] 강원랜드, 광주은행, 건설공제조합, 국민건강보험공단 등',
+  ].join('\n'));
+});
+
+test('formatEvaluationCareerForTemplate does not spill a trailing evaluation label into career text', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '[면접] 한국은행, 농협, 서민금융진흥원, 한국벤처투자 [서류] 서울경제진흥원',
+    careerRaw: '임팩트그룹코리아 / HR Business Partner: 조직문화 운영',
+  });
+
+  assert.equal(formatted, [
+    '[서류] 서울경제진흥원',
+    '[면접] 한국은행, 농협, 서민금융진흥원, 한국벤처투자',
+  ].join('\n'));
+});
+
+test('formatEvaluationCareerForTemplate ignores bare document words in descriptive phrases', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '채용심사: K-water AI 면접, 농협 AI 개발자 면접, 농협 개발 경력자 서류 평가, 한국전력 IT 직군, 기업은행',
+  });
+
+  assert.equal(formatted, '[심사] K-water AI 면접, 농협 AI 개발자 면접, 농협 개발 경력자 서류 평가, 한국전력 IT 직군 등');
+});
+
 test('formatCareerForTemplate excludes explicit evaluation blocks from career summary', () => {
   const formatted = formatCareerForTemplate({
     affiliation: 'HR 임팩트 대표',

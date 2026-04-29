@@ -127,14 +127,14 @@ const extractEvaluationBlocks = (text = '') => {
   const source = normalizeMultiline(text).replace(/\n+/g, ' ');
   if (source === EMPTY_VALUE) return [];
 
-  const labelRegex = /(?:\[\s*(서류평가|서류전형|서류|채용면접|면접평가|면접전형|면접|심사|자문)\s*\]\s*|(?:서류평가|서류전형|서류|채용면접|면접평가|면접전형|면접|심사|자문)\s*[:：]\s*|(?:면접관\s*)?경력\s*(서류|면접)\s*[:：]?\s*|(?:면접경력|서류평가\s*경력)\s*[:：]?\s*|(?:서류전형|면접전형|채용면접)\s*[-–]\s*|(?:^|\s)(서류|면접)\s+(?=[가-힣A-Z0-9][^:：]{0,50}(?:은행|공단|공사|재단|진흥원|관리원|보험공사|보증공사|보증기금|연구원|병원|청|부|시청|구청|KDB|KB|IBK|LH|KOTRA|KOICA)))/g;
+  const labelRegex = /(?:\[\s*(서류평가|서류전형|서류|채용면접|면접평가|면접전형|면접|채용심사|심사|자문)\s*\]\s*|(?:서류평가|서류전형|서류|채용면접|면접평가|면접전형|면접|채용심사|심사|자문)\s*[:：]\s*|(?:면접관\s*)?경력\s*(서류|면접)\s*[:：]?\s*|(?:면접경력|서류평가\s*경력)\s*[:：]?\s*|(?:서류전형|면접전형|채용면접)\s*[-–]\s*|(?:^|\s)(서류|면접)\s+(?!평가|전형|심사|관련|과제|교육)(?=[가-힣A-Z0-9][^:：]{0,50}(?:은행|공단|공사|재단|진흥원|관리원|보험공사|보증공사|보증기금|연구원|병원|청|부|시청|구청|KDB|KB|IBK|LH|KOTRA|KOICA)))/g;
   const matches = [...source.matchAll(labelRegex)];
 
   return matches.map((match, index) => {
     const rawLabel = match[1] || match[2] || match[3] || match[0] || '';
     const nextIndex = matches[index + 1]?.index ?? source.length;
     const body = source.slice((match.index ?? 0) + match[0].length, nextIndex);
-    const label = /서류/.test(rawLabel) ? '서류' : /면접/.test(rawLabel) ? '면접' : rawLabel;
+    const label = /서류/.test(rawLabel) ? '서류' : /면접/.test(rawLabel) ? '면접' : /심사/.test(rawLabel) ? '심사' : rawLabel;
     return { label, body: cleanupEvaluationBody(body) };
   }).filter((item) => item.body);
 };
@@ -164,14 +164,21 @@ const compactEvaluationList = (value = '') => {
 };
 
 export const formatEvaluationCareerForTemplate = (row = {}) => {
-  const baseText = String(row.careerRaw || row.careerDetails || row.career || '');
-  if (isEmptyValue(baseText)) return '';
+  const sourceTexts = unique([
+    row.evaluationRaw,
+    row.careerRaw,
+    row.careerDetails,
+    row.career,
+  ].map((value) => String(value ?? '')).filter((value) => !isEmptyValue(value)));
+  if (!sourceTexts.length) return '';
 
   const groups = new Map();
-  extractEvaluationBlocks(baseText).forEach(({ label, body }) => {
-    const key = label === '서류' ? '서류' : label === '면접' ? '면접' : label;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(compactEvaluationList(body));
+  sourceTexts.forEach((sourceText) => {
+    extractEvaluationBlocks(sourceText).forEach(({ label, body }) => {
+      const key = label === '서류' ? '서류' : label === '면접' ? '면접' : label;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(compactEvaluationList(body));
+    });
   });
 
   const lines = [];

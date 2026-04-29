@@ -1451,6 +1451,7 @@ export const createEmptyProfile = (fileName = '') => ({
   careerRaw: '',
   careerDetails: '',
   careerList: [],
+  evaluationRaw: '',
   reviewTags: [],
   error: false,
 });
@@ -1503,6 +1504,10 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
       findLabeledValue(allNodes, FIELD_LABELS.career, { lookAhead: 24, validator: cleanInline })
     );
     const careerEntries = splitCareerEntries(careerBody);
+    const evaluationBody = firstNonEmpty(
+      findSectionBody(allText, FIELD_LABELS.evaluation, SECTION_STOP_HEADERS.career),
+      findLabeledValue(allNodes, FIELD_LABELS.evaluation, { lookAhead: 40, validator: cleanInline })
+    );
 
     const affiliationBody = firstNonEmpty(
       findSectionBody(allText, FIELD_LABELS.affiliation, SECTION_STOP_HEADERS.affiliation),
@@ -1540,6 +1545,7 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
     row.careerRaw = firstNonEmptyPreserveLines(tidyMultiline(sanitizeBracketArtifacts(careerBody)), EMPTY_VALUE);
     row.careerDetails = firstNonEmptyPreserveLines(tidyMultiline(formatCareerDetails(careerEntries)), EMPTY_VALUE);
     row.careerList = careerEntries;
+    row.evaluationRaw = firstNonEmptyPreserveLines(tidyMultiline(sanitizeBracketArtifacts(evaluationBody)), EMPTY_VALUE);
     row.career = firstNonEmptyPreserveLines(
       tidyMultiline(formatCareerSummary(careerEntries)),
       row.careerDetails,
