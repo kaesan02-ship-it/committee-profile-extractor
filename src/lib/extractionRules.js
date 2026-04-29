@@ -94,6 +94,7 @@ export const CAREER_START_PATTERN = /^(?:\d{4}(?:\s*[.]\s*\d{1,2})?\s*[~∼〜-]
 export const DEGREE_PATTERNS = [
   { rank: 4.8, regex: /석박사\s*통합|통합\s*석박사/i },
   { rank: 4.6, regex: /박사과정수료|박사수료/i },
+  { rank: 4.4, regex: /박사과정/i },
   { rank: 5, regex: /박사|\bPh\.?\s*D\b|\bDoctor\b/i },
   { rank: 3, regex: /석사|\bM\.?\s*A\b|\bM\.?\s*S\b|\bMBA\b/i },
   { rank: 2, regex: /학사|\bB\.?\s*A\b|\bB\.?\s*S\b|대학교\s*졸업/i },
@@ -139,6 +140,7 @@ export const AFFILIATION_CUTOFF_KEYWORDS = [
 export const EDUCATION_DEGREE_KEYWORDS = [
   '박사과정수료',
   '박사수료',
+  '박사과정',
   '석박사 통합',
   '석박사통합',
   '박사',

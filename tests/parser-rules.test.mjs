@@ -77,6 +77,58 @@ test('splitEducationRecords treats leading degree labels as labels, not extra de
   assert.equal(__testing.extractHighestEducation(records), '한양대학교 컴퓨터공학 박사수료');
 });
 
+test('splitEducationRecords extracts parenthetical degree records and doctorate courses', () => {
+  const records = __testing.splitEducationRecords(
+    '이화여자대학교 심리학과 ( 학사 ) , 이화여자대학교 교육학 ( 석사 ), 숭실대학교 경영학과 ( 박사과정 )'
+  );
+
+  assert.deepEqual(records, [
+    '이화여자대학교 심리학과 학사',
+    '이화여자대학교 교육학 석사',
+    '숭실대학교 경영학과 박사과정',
+  ]);
+  assert.equal(__testing.extractHighestEducation(records), '숭실대학교 경영학과 박사과정');
+});
+
+test('splitEducationRecords carries slash shorthand degree context', () => {
+  const records = __testing.splitEducationRecords('경희대학교 관광경영학 학사 / 석사 / 박사 졸');
+
+  assert.deepEqual(records, [
+    '경희대학교 관광경영학 학사',
+    '경희대학교 관광경영학 석사',
+    '경희대학교 관광경영학 박사 졸',
+  ]);
+  assert.equal(__testing.extractHighestEducation(records), '경희대학교 관광경영학 박사 졸');
+});
+
+test('chooseAffiliation keeps current-career position when explicit affiliation is organization-only', () => {
+  assert.equal(
+    __testing.chooseAffiliation(
+      '한국지능정보사회진흥원',
+      '(2024.01~ 현재 ) 한국지능정보사회진흥원 인공지능 (AI) 정책실 수석'
+    ),
+    '한국지능정보사회진흥원 인공지능 (AI) 정책실 수석'
+  );
+});
+
+test('chooseAffiliation preserves department chair spacing from current career', () => {
+  assert.equal(
+    __testing.chooseAffiliation('경기과학기술대학교', '현 ) 경기과학기술대학교 전기제어 공학과 학과장 (2020.3~ 현재 )'),
+    '경기과학기술대학교 전기제어 공학과 학과장'
+  );
+});
+
+test('sanitizeAffiliation removes standalone contact label tails', () => {
+  assert.equal(
+    __testing.sanitizeAffiliation('한국인터넷진흥원 / 디지털위협예방본부 / 디지털보안인증단 단장 핸드폰 )010-3043-9470'),
+    '한국인터넷진흥원 / 디지털위협예방본부 / 디지털보안인증단 단장'
+  );
+});
+
+test('extractBirth supports comma-separated birth dates', () => {
+  assert.equal(__testing.extractBirth('생 년 월 일 1979,11.30'), '1979.11.30');
+});
+
 test('tagSuspiciousProfile flags missing fields for review', () => {
   const tags = tagSuspiciousProfile({
     phone: EMPTY_VALUE,
