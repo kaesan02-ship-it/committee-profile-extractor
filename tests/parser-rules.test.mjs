@@ -130,6 +130,24 @@ test('splitEducationRecords keeps context when doctorate completion appears befo
   assert.equal(__testing.extractHighestEducation(records), '서울대학교 컴퓨터공학과 박사수료');
 });
 
+test('findSectionBody matches nested performance section headers instead of parent titles', () => {
+  const allText = [
+    '경력사항 및 주요실적',
+    '주요이력',
+    '現 한국전문면접평가인증원 전문위원',
+    '주요실적',
+    '[서류] 한국수출입은행, 국민카드',
+    '[면접] IBK 기업은행, 금융감독원',
+    '기타',
+    '자격 및 이수',
+  ].join('\n');
+
+  assert.equal(
+    __testing.findSectionBody(allText, ['주요실적'], ['기타']),
+    '[서류] 한국수출입은행, 국민카드\n[면접] IBK 기업은행, 금융감독원'
+  );
+});
+
 test('chooseAffiliation keeps current-career position when explicit affiliation is organization-only', () => {
   assert.equal(
     __testing.chooseAffiliation(

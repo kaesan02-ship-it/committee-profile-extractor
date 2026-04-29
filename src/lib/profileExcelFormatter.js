@@ -140,10 +140,12 @@ const extractEvaluationBlocks = (text = '') => {
 };
 
 const cleanupEvaluationBody = (value = '') => cleanupEntry(value)
+  .replace(/^[:：]\s*/, '')
   .replace(/^\s*[-–]\s*/, '')
   .replace(/^\[\s*(?:금융|공공기관|공공|공기업|사기업|민간|대학교|대학|기타)\s*[-:：]?\s*/, '')
   .replace(/^(?:외\s*)?다수[,.]?\s*/i, '')
   .replace(/(KDB\s*산업은행)산업은행/g, '$1')
+  .replace(/\s*면접관\s*Profile\s*$/i, '')
   .replace(/\s*(?:기타|자격|논문|주요이력|주요실적|수행실적)\s*.*$/i, '')
   .replace(/\s{2,}/g, ' ')
   .replace(/\s*[,/]+\s*$/g, '')

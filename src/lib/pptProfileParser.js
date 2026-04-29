@@ -1379,7 +1379,7 @@ const findSectionBody = (allText, headers = [], stopHeaders = []) => {
   for (const header of headers) {
     const headerPattern = header.replace(/\s+/g, '').split('').join('\\s*');
     const regex = new RegExp(
-      `${headerPattern}\\s*[:：]?([\\s\\S]*?)(?=\\n\\s*(?:[●○•■□▷▶*-]\\s*)?(?:${stopPattern || '$^'})\\s*[:：]?|$)`,
+      `(?:^|\\n)\\s*(?:[●○•■□▷▶*-]\\s*)?${headerPattern}\\s*[:：]?\\s*([\\s\\S]*?)(?=\\n\\s*(?:[●○•■□▷▶*-]\\s*)?(?:${stopPattern || '$^'})\\s*[:：]?|$)`,
       'i'
     );
     const match = allText.match(regex);
@@ -1614,6 +1614,7 @@ export const __testing = {
   extractHighestEducation,
   extractNameFromFileName,
   extractPhone,
+  findSectionBody,
   sanitizeAffiliation,
   splitEducationRecords,
   tagSuspiciousProfile,

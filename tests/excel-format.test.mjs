@@ -129,6 +129,14 @@ test('formatEvaluationCareerForTemplate fills rows with no evaluation evidence',
   assert.equal(formatEvaluationCareerForTemplate({}), '[미기재] 평가이력 별도 기재 없음');
 });
 
+test('formatEvaluationCareerForTemplate cleans leading colons and profile tails', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '[면접] : 하나은행, 국민은행, 한국연구재단 면접관 Profile',
+  });
+
+  assert.equal(formatted, '[면접] 하나은행, 국민은행, 한국연구재단');
+});
+
 test('formatCareerForTemplate excludes explicit evaluation blocks from career summary', () => {
   const formatted = formatCareerForTemplate({
     affiliation: 'HR 임팩트 대표',
