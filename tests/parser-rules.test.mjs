@@ -25,8 +25,27 @@ test('extractGender ignores 남/여 choice templates', () => {
   assert.equal(__testing.extractGender('성별: 남'), '남');
 });
 
+test('extractGenderFromFileName reads delimited gender markers only', () => {
+  assert.equal(__testing.extractGenderFromFileName('이상훈 프로필_HR_5월 7일_남.pptx'), '남');
+  assert.equal(__testing.extractGenderFromFileName('이다솜_프로필_IT_5월 6일_여.pptx'), '여');
+  assert.equal(__testing.extractGenderFromFileName('남기정 프로필.pptx'), '');
+});
+
+test('extractNameFromFileName prefers the leading person name', () => {
+  assert.equal(__testing.extractNameFromFileName('김미애_프로필.pptx'), '김미애');
+});
+
 test('chooseAffiliation refuses generic document text without organization signal', () => {
   assert.equal(__testing.chooseAffiliation('전문분야 경영전략 주요경력 평가위원', ''), '');
+});
+
+test('sanitizeAffiliation removes contact and open-ended date tails', () => {
+  assert.equal(__testing.sanitizeAffiliation('서브레인 대표 ( Tel ) 010- 2579'), '서브레인 대표');
+  assert.equal(__testing.sanitizeAffiliation('메드소프트 대표 (2010 년 2 월 ~'), '메드소프트 대표');
+  assert.equal(__testing.sanitizeAffiliation('이씨에스텔레콤 PM 팀 프로젝트매니저 파트장 ( 부장 , 2023 년 03 월 ~'), '이씨에스텔레콤 PM 팀 프로젝트매니저 파트장');
+  assert.equal(__testing.sanitizeAffiliation('이루다에이치알 대표 : 채용컨설팅 ( 20 20 년 07 월 ~'), '이루다에이치알 대표 : 채용컨설팅');
+  assert.equal(__testing.sanitizeAffiliation('엔지니어링그룹 에이원 / 전무 010'), '엔지니어링그룹 에이원 / 전무');
+  assert.equal(__testing.sanitizeAffiliation('한국중소기업금융협회 본부장'), '한국중소기업금융협회 본부장');
 });
 
 test('tagSuspiciousProfile flags missing fields for review', () => {

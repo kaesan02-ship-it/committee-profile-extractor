@@ -28,11 +28,12 @@ const CAREER_NOISE_PATTERN = /^(?:주요경력|주요\s*경력|주요이력|주�
 const AFFILIATION_LABEL_PATTERN = /^(?:소속|현소속|현재소속|현직|근무처|소속및연락처|소속\s*및\s*연락처|소속\s*\/\s*연락처|소속\s*및\s*직위|소속\s*\/\s*직위)\s*[:：]?/;
 const CURRENT_PREFIX_PATTERN = /^(?:현재|현|現|現\)|現\s*\)|\(현\)|\[현\]|\{현\})\s*[-)\]:：.]*/;
 const PREVIOUS_PREFIX_PATTERN = /^(?:전|前|\(전\))\s*[-)\]:：.]*/;
-const DATE_RANGE_PREFIX_PATTERN = /^(?:\d{4}(?:[.]\d{1,2})?\s*[~∼〜-]\s*(?:\d{4}(?:[.]\d{1,2})?|현재)|\d{4}\s*년\s*~\s*(?:\d{4}\s*년|현재)|\d{4}[.]\d{1,2}\s*~\s*현재)\s*/;
-const CONTACT_NOISE_PATTERN = /(연락처|휴대전화|휴대폰|핸드폰번호|전화번호|이메일|E-mail|Email|메일|메일주소)/i;
+const DATE_RANGE_PREFIX_PATTERN = /^(?:\(?\s*\d{4}(?:[.]\d{1,2})?\.?\s*[~∼〜-]\s*(?::|현재|\d{4}(?:[.]\d{1,2})?)?|\(?\s*\d{4}\s*년(?:\s*\d{1,2}\s*월)?\s*[~∼〜-]\s*(?::|현재|\d{4}\s*년)?|\d{4}[.]\d{1,2}\s*~\s*현재)\s*/;
+const CONTACT_NOISE_PATTERN = /(연락처|휴대전화|휴대폰|핸드폰번호|전화번호|이메일|E-mail|Email|메일|메일주소|Tel|Telephone|Mobile|Phone)/i;
 const EDUCATION_KEYWORD_PATTERN = /(학사|석사|박사|전문학사|대학교|대학원|학위|졸업|수료|재학|학과|학부|전공|University|Department|School|College)/i;
 const CAREER_SECTION_LINE_PATTERN = /(경력|이력|재직|근무|수행|프로젝트|담당|위원|심사|평가)/;
 const EXPERTISE_LABEL_PATTERN = /^(?:전문분야|전\s*문\s*분야|전문\s*분야|전문\s*산업분야|전문\s*직무분야|주요분야|전공|핵심역량)\s*[:：]?/;
+const OPEN_ENDED_CAREER_PATTERN = /(?:^|\(|\s)\d{4}(?:[.]\d{1,2})?\.?(?:\s*년(?:\s*\d{1,2}\s*월)?)?\s*[~∼〜-]\s*(?:현재)?(?:\)|\s|$)/;
 const TOKEN_PLACEHOLDER = '__SLASH__';
 
 const decodeHTML = (text = '') => {
@@ -211,6 +212,27 @@ const refineName = (value = '') => {
   return isLikelyName(name) ? name : '';
 };
 
+const extractNameFromFileName = (fileName = '') => {
+  const stem = cleanInline(fileName)
+    .replace(/\.[^.]+$/g, '')
+    .replace(/프로필.*$/i, '')
+    .trim();
+  return refineName(stem.split(/[_\-\s]/)[0]);
+};
+
+const preferFileNameName = (candidate = '', fileNameCandidate = '') => {
+  if (!candidate) return '';
+  if (
+    fileNameCandidate &&
+    candidate !== fileNameCandidate &&
+    candidate.startsWith(fileNameCandidate) &&
+    candidate.length - fileNameCandidate.length <= 2
+  ) {
+    return fileNameCandidate;
+  }
+  return candidate;
+};
+
 const normalizeEmail = (value = '') => cleanInline(value).replace(/\s+/g, '');
 
 const extractEmail = (text = '') => {
@@ -323,6 +345,13 @@ const extractGender = (text = '') => {
   return '';
 };
 
+const extractGenderFromFileName = (fileName = '') => {
+  const stem = cleanInline(fileName).replace(/\.[^.]+$/g, '');
+  if (/(?:^|[_\s-])남(?:[_\s.-]|$)/u.test(stem)) return '남';
+  if (/(?:^|[_\s-])여(?:[_\s.-]|$)/u.test(stem)) return '여';
+  return '';
+};
+
 const degreeRank = (line = '') => DEGREE_PATTERNS.find((item) => item.regex.test(line))?.rank || 0;
 const educationStatusWeight = (line = '') => EDUCATION_STATUS_PATTERNS.find((item) => item.regex.test(line))?.weight || 0;
 const hasPosition = (line = '') => POSITION_HINTS.some((hint) => cleanInline(line).includes(hint));
@@ -334,6 +363,8 @@ const truncateAtLooseKeyword = (text = '', keywords = []) => {
   let cutIndex = value.length;
 
   keywords.forEach((keyword) => {
+    if (['협회', '학회', '위원회'].includes(keyword) && hasPosition(value)) return;
+
     const regex = new RegExp(keyword.split(/\s+/).map(escapeRegex).join('\\s*'), 'i');
     const match = regex.exec(value);
     if (match && match.index > 0 && match.index < cutIndex) {
@@ -1010,12 +1041,16 @@ const stripAffiliationTail = (text = '') => {
   }
 
   value = value
+    .replace(/\s*\([^)]*(?:\d\s*){2,4}[^)]*?[~∼〜-]\s*(?:현재)?\s*$/g, ' ')
+    .replace(/\s*\(\s*\d{4}(?:[.]\d{1,2})?\.?(?:\s*년(?:\s*\d{1,2}\s*월)?)?\s*[~∼〜-]\s*(?:현재)?\s*$/g, ' ')
+    .replace(/\s*\(\s*\d{4}[^)]*?[~∼〜-]\s*(?:현재)?\s*$/g, ' ')
     .replace(/\(\s*\d{4}[^)]*?\)/g, ' ')
     .replace(
-      /\d{4}(?:\s*년)?(?:[.]\d{1,2}|\s*년\s*\d{1,2}\s*월)?\s*[~∼〜-]\s*(?:\d{4}(?:\s*년)?(?:[.]\d{1,2}|\s*년\s*\d{1,2}\s*월)?|현재)\s*/g,
+      /\d{4}(?:\s*년)?(?:[.]\d{1,2}|\s*년\s*\d{1,2}\s*월)?\s*[~∼〜-]\s*(?:\d{4}(?:\s*년)?(?:[.]\d{1,2}|\s*년\s*\d{1,2}\s*월)?|현재)?\s*/g,
       ' '
     )
     .replace(/\(\s*(?:교수|정교수|부교수|조교수|대표|원장|센터장|소장|부장|팀장|실장)\s*\)$/i, ' ')
+    .replace(/\s+0\s*1[016789](?:[\s./-]*\d){0,8}\s*$/g, ' ')
     .replace(/[|]+/g, ' ')
     .replace(/\s*[,/·]+\s*$/g, '')
     .replace(/\s{2,}/g, ' ')
@@ -1065,7 +1100,7 @@ const sanitizeAffiliation = (text = '') => {
     .replace(EMAIL_PATTERN_GLOBAL, ' ')
     .replace(/\(\s*이메일[^)]*\)/gi, ' ')
     .replace(/\(\s*연락처[^)]*\)/gi, ' ')
-    .replace(/(?:핸드폰번호|메일주소|이메일|연락처|휴대폰|휴대전화)\s*[:：]?\s*.*$/i, ' ')
+    .replace(/(?:핸드폰번호|메일주소|이메일|연락처|휴대폰|휴대전화|Tel|Telephone|Mobile|Phone)\s*[):：]?\s*.*$/i, ' ')
     .replace(/\\/g, ' ')
     .replace(/\s+-\s+.*$/, '')
     .replace(/\s{2,}/g, ' ')
@@ -1076,6 +1111,7 @@ const sanitizeAffiliation = (text = '') => {
   value = truncateAtLooseKeyword(value, AFFILIATION_CUTOFF_KEYWORDS)
     .replace(/^[\])}\s]+/, '')
     .replace(/[([{]\s*$/, '')
+    .replace(/\s+0\s*1\s*[016789]?(?:[\s./-]*\d){0,8}\s*$/g, '')
     .replace(/\s*[/,-]+\s*$/, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
@@ -1102,6 +1138,7 @@ const scoreAffiliationCandidate = (line = '', source = 'affiliation') => {
   if (value.length >= 8 && value.length <= 40) score += 3;
   if (value.length < 3) score -= 5;
   if (value.length > 55) score -= 5;
+  if (OPEN_ENDED_CAREER_PATTERN.test(line)) score += 4;
   if (!hasSignal) score -= 6;
   if (AFFILIATION_HEADER_NOISE_PATTERN.test(value)) score -= 6;
   if (CONTACT_NOISE_PATTERN.test(value) || extractEmail(value) || extractPhone(value)) score -= 5;
@@ -1169,7 +1206,7 @@ const extractCurrentCareerLine = (text = '') => {
 
   const currentCandidates = entries
     .map((line, index) => ({ line, index }))
-    .filter(({ line }) => hasCurrentMarker(line) || /현재/.test(line))
+    .filter(({ line }) => hasCurrentMarker(line) || /현재/.test(line) || OPEN_ENDED_CAREER_PATTERN.test(line))
     .map(({ line, index }) => ({ value: sanitizeAffiliation(line), raw: line, index }))
     .filter(({ value }) => Boolean(value))
     .sort(
@@ -1207,6 +1244,9 @@ const chooseAffiliation = (affiliationText = '', careerText = '') => {
         Number(b.source === 'career-current') - Number(a.source === 'career-current') ||
         b.value.length - a.value.length
     );
+
+  const explicitAffiliation = scored.find((item) => item.source === 'affiliation');
+  if (explicitAffiliation) return explicitAffiliation.value;
 
   return scored[0]?.value || '';
 };
@@ -1382,17 +1422,21 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
     const zip = await JSZip.loadAsync(input);
     const { allNodes, allText } = await extractNodesAndText(zip);
     const row = createEmptyProfile(fileName);
+    const fileNameCandidate = extractNameFromFileName(fileName);
+    const labeledName = findLabeledValue(allNodes, FIELD_LABELS.name, { lookAhead: 5, validator: refineName });
+    const textName = refineName(allText.match(/(?:위원\s*성명|성명|이름)\s*[:：]?\s*([가-힣\s]{2,8})/)?.[1]);
 
     row.name = firstNonEmpty(
-      findLabeledValue(allNodes, FIELD_LABELS.name, { lookAhead: 5, validator: refineName }),
-      refineName(allText.match(/(?:위원\s*성명|성명|이름)\s*[:：]?\s*([가-힣\s]{2,8})/)?.[1]),
-      refineName(fileName.split(/[_\-.\s]/)[0]),
+      preferFileNameName(labeledName, fileNameCandidate),
+      preferFileNameName(textName, fileNameCandidate),
+      fileNameCandidate,
       EMPTY_VALUE
     );
 
     row.gender = firstNonEmpty(
       findLabeledValue(allNodes, FIELD_LABELS.gender, { lookAhead: 8, validator: extractGender }),
       extractGender(allText),
+      extractGenderFromFileName(fileName),
       EMPTY_VALUE
     );
 
@@ -1428,6 +1472,9 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
       chooseAffiliation(affiliationBody, careerBody),
       EMPTY_VALUE
     );
+    if (row.affiliation !== EMPTY_VALUE) {
+      row.affiliation = sanitizeAffiliation(row.affiliation);
+    }
 
     const educationBody = firstNonEmpty(
       findSectionBody(allText, FIELD_LABELS.education, SECTION_STOP_HEADERS.education),
@@ -1479,6 +1526,8 @@ export const parsePptxProfile = async (file) => {
 export const __testing = {
   chooseAffiliation,
   extractGender,
+  extractGenderFromFileName,
+  extractNameFromFileName,
   extractPhone,
   sanitizeAffiliation,
   tagSuspiciousProfile,
