@@ -127,11 +127,11 @@ const extractEvaluationBlocks = (text = '') => {
   const source = normalizeMultiline(text).replace(/\n+/g, ' ');
   if (source === EMPTY_VALUE) return [];
 
-  const labelRegex = /(?:\[?\s*(서류평가|서류전형|서류|채용면접|면접전형|면접|심사|자문)\s*\]?|(?:면접관\s*)?경력\s*(서류|면접))\s*[:：]/g;
+  const labelRegex = /(?:\[\s*(서류평가|서류전형|서류|채용면접|면접평가|면접전형|면접|심사|자문)\s*\]\s*|(?:서류평가|서류전형|서류|채용면접|면접평가|면접전형|면접|심사|자문)\s*[:：]\s*|(?:면접관\s*)?경력\s*(서류|면접)\s*[:：]?\s*|(?:면접경력|서류평가\s*경력)\s*[:：]?\s*|(?:서류전형|면접전형|채용면접)\s*[-–]\s*|(?:^|\s)(서류|면접)\s+(?=[가-힣A-Z0-9][^:：]{0,50}(?:은행|공단|공사|재단|진흥원|관리원|보험공사|보증공사|보증기금|연구원|병원|청|부|시청|구청|KDB|KB|IBK|LH|KOTRA|KOICA)))/g;
   const matches = [...source.matchAll(labelRegex)];
 
   return matches.map((match, index) => {
-    const rawLabel = match[1] || match[2] || '';
+    const rawLabel = match[1] || match[2] || match[3] || match[0] || '';
     const nextIndex = matches[index + 1]?.index ?? source.length;
     const body = source.slice((match.index ?? 0) + match[0].length, nextIndex);
     const label = /서류/.test(rawLabel) ? '서류' : /면접/.test(rawLabel) ? '면접' : rawLabel;
@@ -140,7 +140,10 @@ const extractEvaluationBlocks = (text = '') => {
 };
 
 const cleanupEvaluationBody = (value = '') => cleanupEntry(value)
+  .replace(/^\s*[-–]\s*/, '')
+  .replace(/^\[\s*(?:금융|공공기관|공공|공기업|사기업|민간|대학교|대학|기타)\s*[-:：]?\s*/, '')
   .replace(/^(?:외\s*)?다수[,.]?\s*/i, '')
+  .replace(/(KDB\s*산업은행)산업은행/g, '$1')
   .replace(/\s*(?:기타|자격|논문|주요이력|주요실적|수행실적)\s*.*$/i, '')
   .replace(/\s{2,}/g, ' ')
   .replace(/\s*[,/]+\s*$/g, '')

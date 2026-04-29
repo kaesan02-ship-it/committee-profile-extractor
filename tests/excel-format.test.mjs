@@ -52,6 +52,39 @@ test('formatEvaluationCareerForTemplate separates explicit document and intervie
   ].join('\n'));
 });
 
+test('formatEvaluationCareerForTemplate handles bracket labels without colons', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    careerDetails: '[면접평가] KB 국민은행, 금융감독원, IBK 기업은행, 한국원자력공단, 한국무역보험공사 [서류평가] KB 국민은행, 한국산업기술진흥원, 한국언론진흥재단, 국립해양생물자원관, 한국수자원공사',
+  });
+
+  assert.equal(formatted, [
+    '[서류] KB 국민은행, 한국산업기술진흥원, 한국언론진흥재단, 국립해양생물자원관 등',
+    '[면접] KB 국민은행, 금융감독원, IBK 기업은행, 한국원자력공단 등',
+  ].join('\n'));
+});
+
+test('formatEvaluationCareerForTemplate handles bare interview and document labels', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    careerDetails: '면접 한국수출입은행, 국립해양생물자원관, 제주문화예술재단, 서울물재생시설공단, 우체국물류지원단 서류 국가철도공단, KB 국민은행, 한국우편사업진흥원, 한국산림복지진흥원, 한국무역보험공사',
+  });
+
+  assert.equal(formatted, [
+    '[서류] 국가철도공단, KB 국민은행, 한국우편사업진흥원, 한국산림복지진흥원 등',
+    '[면접] 한국수출입은행, 국립해양생물자원관, 제주문화예술재단, 서울물재생시설공단 등',
+  ].join('\n'));
+});
+
+test('formatEvaluationCareerForTemplate cleans category prefixes from evaluation lists', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    careerDetails: '면접전형 - [금융-한국은행, 금융감독원, KDB 산업은행, 한국수출입은행 서류전형 - [금융-한국은행, 금융결제원, KDB 산업은행산업은행, 한국무역보험공사',
+  });
+
+  assert.equal(formatted, [
+    '[서류] 한국은행, 금융결제원, KDB 산업은행, 한국무역보험공사',
+    '[면접] 한국은행, 금융감독원, KDB 산업은행, 한국수출입은행',
+  ].join('\n'));
+});
+
 test('formatCareerForTemplate excludes explicit evaluation blocks from career summary', () => {
   const formatted = formatCareerForTemplate({
     affiliation: 'HR 임팩트 대표',
