@@ -32,6 +32,29 @@ test('formatCareerForTemplate summarizes date-ranged careers to four rows', () =
   ].join('\n'));
 });
 
+test('formatCareerForTemplate keeps hyphen-current dates inside current careers', () => {
+  const formatted = formatCareerForTemplate({
+    careerDetails: '現 (주)E&C PARTNER 이사 (2019. 01- 현재) 現 고려대학교 평생교육원 상담심리학과 초빙강사 (2014. 03-2023. 08, 2024. 09- 현재) 現 부천대학교 원격평생교육원 강사 (2024. 03- 현재)',
+  });
+
+  assert.equal(formatted, [
+    '現) (주)E&C PARTNER 이사 (2019. 01- 현재)',
+    '現) 고려대학교 평생교육원 상담심리학과 초빙강사 (2014. 03-2023. 08, 2024. 09- 현재)',
+    '現) 부천대학교 원격평생교육원 강사 (2024. 03- 현재)',
+  ].join('\n'));
+});
+
+test('formatCareerForTemplate cleans underscore date ranges and header-only rows', () => {
+  const formatted = formatCareerForTemplate({
+    careerDetails: '및 수행실적 주요이력 現 커리어엔 대표 (20019 년 _ 현재) _ 조직진단, 역량평가 前 플러스컨설팅 기획 팀장 (2012 년 _ 2015 년) 채용대행',
+  });
+
+  assert.equal(formatted, [
+    '現) 커리어엔 대표 (2019년~현재) - 조직진단, 역량평가',
+    '前) 플러스컨설팅 기획 팀장 (2012 년~2015 년) 채용대행',
+  ].join('\n'));
+});
+
 test('formatEvaluationCareerForTemplate ignores parenthetical interview noise', () => {
   assert.equal(
     formatEvaluationCareerForTemplate({
@@ -60,6 +83,17 @@ test('formatEvaluationCareerForTemplate handles bracket labels without colons', 
   assert.equal(formatted, [
     '[서류] KB 국민은행, 한국산업기술진흥원, 한국언론진흥재단, 국립해양생물자원관 등',
     '[면접] KB 국민은행, 금융감독원, IBK 기업은행, 한국원자력공단 등',
+  ].join('\n'));
+});
+
+test('formatEvaluationCareerForTemplate handles angle-bracket performance labels', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '<채용면접> 신용보증기금, 한국투자공사, 한국무역보험공사 <영어면접> 한국부동산원, 코트라 <심의위원> 수원지방법원',
+  });
+
+  assert.equal(formatted, [
+    '[면접] 신용보증기금, 한국투자공사, 한국무역보험공사, 한국부동산원, 코트라',
+    '[심사] 수원지방법원',
   ].join('\n'));
 });
 

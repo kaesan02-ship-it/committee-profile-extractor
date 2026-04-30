@@ -1232,7 +1232,7 @@ const isCareerStart = (line = '') => {
 const splitCareerEntries = (text = '') => {
   const rawLines = sanitizeBracketArtifacts(text)
     .replace(/\s*[•■□▷▶*]+\s*/g, '\n')
-    .replace(/\s*[－─]\s*/g, '\n')
+    .replace(/(?:^|\n)\s*[－─]\s*/g, '\n')
     .split(/\n+/)
     .map((line) => normalizeCareerLine(line))
     .filter(Boolean);
