@@ -432,6 +432,10 @@ const educationCanonicalKey = (text = '') => {
 };
 
 const normalizeDegreePrefixLabels = (text = '') => String(text ?? '')
+  .replace(
+    /([^\n]*(?:대학교|대학원|대학|교육원|University|College|School|Institute|학과|학부|전공)[^\n]*?)\s*\n\s*(학사|석사|박사|전문학사)\s+(?=[가-힣A-Za-z]{2,}(?:대학교|대학원|대학|교육원|University|College|School|Institute))/gi,
+    '$1 $2\n'
+  )
   .replace(/(^|\s)(학사|석사|박사|전문학사|박사수료|박사과정수료|석박사\s*통합|석박사통합)\s*[:：]\s*/gi, '$1[$2] ');
 
 const getEducationSourceLines = (text = '') => {
@@ -828,6 +832,12 @@ const isCoveredByAtomicEducationRecords = (record = '', pool = []) => {
 
 const isMixedDegreeEducationRecord = (record = '') => getEducationDegreeLabels(record).length > 1;
 
+const isDegreeOnlyFragment = (record = '') => {
+  const normalized = normalizeEducationRecord(record).replace(/\s+/g, ' ').trim();
+  return isStandaloneDegreeRecord(normalized) ||
+    /^(?:과정\s*(?:중)?|졸업|수료|재학)\s+(?:학사|석사|박사|전문학사|박사수료|박사과정수료)$/i.test(normalized);
+};
+
 const isCoveredByMoreSpecificEducationRecord = (record = '', pool = []) => {
   const key = educationCanonicalKey(record);
   const context = educationCanonicalKey(extractEducationContext(record));
@@ -1013,7 +1023,7 @@ const splitEducationRecords = (text = '') => {
   const withoutCombinedDuplicates = explodedRecords.filter((record) => !isCoveredByAtomicEducationRecords(record, explodedRecords));
   const withoutMixedDegreeRecords = withoutCombinedDuplicates.filter((record) => !isMixedDegreeEducationRecord(record));
   const withoutStandaloneDuplicates = withoutMixedDegreeRecords.filter(
-    (record) => !hasCoveredStandaloneAlternative(record, withoutCombinedDuplicates)
+    (record) => !hasCoveredStandaloneAlternative(record, withoutCombinedDuplicates) && !isDegreeOnlyFragment(record)
   );
 
   const balancedCandidates = withoutStandaloneDuplicates.filter((record) => hasBalancedBrackets(record));
@@ -1039,7 +1049,7 @@ const splitEducationRecords = (text = '') => {
   });
   const supportedRecords = sourceSupportedRecords
     .filter((record) => !hasCoveredStandaloneAlternative(record, sourceSupportedRecords))
-    .filter((record) => !isStandaloneDegreeRecord(record))
+    .filter((record) => !isDegreeOnlyFragment(record))
     .filter((record) => !isCoveredByMoreSpecificEducationRecord(record, sourceSupportedRecords));
 
   const canonicalBest = new Map();

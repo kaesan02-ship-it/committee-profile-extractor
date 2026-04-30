@@ -167,6 +167,15 @@ test('splitEducationRecords removes degree-only fragments and duplicate bracket 
       '경희대 건설관리 공학박사',
     ]
   );
+
+  assert.deepEqual(
+    __testing.splitEducationRecords('국가평생교육진흥원 사회복지학 학사\n한성대학교 아동심리학\n학사 서강대학교 교육대학원 평생교육 / 코칭 석사과정 중'),
+    [
+      '국가평생교육진흥원 사회복지학 학사',
+      '한성대학교 아동심리학 학사',
+      '서강대학교 교육대학원 평생교육 코칭 석사과정 중',
+    ]
+  );
 });
 
 test('splitEducationRecords expands bracket degree labels with optional counts', () => {
