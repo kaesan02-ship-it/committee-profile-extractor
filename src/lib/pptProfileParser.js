@@ -16,9 +16,10 @@ import {
   SECTION_STOP_HEADERS,
 } from './extractionRules.js';
 
-const PHONE_PATTERN = /(?:^|[^\d])((?:\+?82[\s./-]?)?0?1[016789](?:[\s./-]?\d){7,8})(?=$|[^\d])/g;
+const PHONE_SEPARATOR_CHARS = /[\s./\-–—]/;
+const PHONE_PATTERN = /(?:^|[^\d])((?:\+?82[\s./\-–—]*)?0?1[016789](?:[\s./\-–—]*\d){7,8})(?=$|[^\d])/g;
 const PHONE_CONTEXT_PATTERN = /(연락처|연락|휴대전화|휴대폰|핸드폰|전화번호|mobile|phone|tel)/i;
-const PHONE_FORMATTED_PATTERN = /(?:\+?82[\s./-]?)?0?1[016789][\s./-]+\d{3,4}[\s./-]+\d{4}/i;
+const PHONE_FORMATTED_PATTERN = /(?:\+?82[\s./\-–—]*)?0?1[016789](?:[\s./\-–—]+\d+){2,}/i;
 const EMAIL_PATTERN = /[a-zA-Z0-9._%+-]+\s*@\s*(?:[a-zA-Z0-9-]+\s*\.\s*)+[a-zA-Z]{2,}/;
 const EMAIL_PATTERN_GLOBAL = new RegExp(EMAIL_PATTERN.source, 'g');
 const DEGREE_PATTERN_GLOBAL = /(?:박사과정수료|박사수료|박사과정|석박사\s*통합|석박사통합|박사|석사|학사|전문학사|\bPh\.?\s*D\b|\bDoctor\b|\bMBA\b|\bM\.?\s*A\b|\bM\.?\s*S\b|\bB\.?\s*A\b|\bB\.?\s*S\b)/i;
@@ -272,6 +273,8 @@ const hasPhoneContext = (text = '', index = -1) => {
 
 const formatPhoneDigits = (digits = '') => digits.replace(/(\d{3})(\d{3,4})(\d{4})/, '$1-$2-$3');
 
+const hasPhoneSeparator = (raw = '') => PHONE_SEPARATOR_CHARS.test(raw.replace(/^\+?82/, ''));
+
 const extractPhone = (text = '', options = {}) => {
   const { requireContext = false } = options;
   const source = cleanInline(text);
@@ -281,7 +284,7 @@ const extractPhone = (text = '', options = {}) => {
     const digits = normalizePhoneDigits(raw);
     if (!isValidMobileDigits(digits)) continue;
 
-    const formatted = PHONE_FORMATTED_PATTERN.test(raw);
+    const formatted = PHONE_FORMATTED_PATTERN.test(raw) && hasPhoneSeparator(raw);
     if (requireContext && !formatted && !hasPhoneContext(source, match.index ?? -1)) continue;
 
     return formatPhoneDigits(digits);

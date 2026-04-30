@@ -18,6 +18,9 @@ test('extractPhone requires nearby context for compact full-document matches', (
 
 test('extractPhone accepts formatted phones in full-document fallback', () => {
   assert.equal(__testing.extractPhone('비상 연락 010-1234-5678', { requireContext: true }), '010-1234-5678');
+  assert.equal(__testing.extractPhone('연락처 : 010–5567-6216', { requireContext: true }), '010-5567-6216');
+  assert.equal(__testing.extractPhone('드림유컨설팅 / 010. 9988. 1981 / email@example.com', { requireContext: true }), '010-9988-1981');
+  assert.equal(__testing.extractPhone('(주)태경에스이 소장 / mail@example.com / 010- 4502 - 2985', { requireContext: true }), '010-4502-2985');
 });
 
 test('extractGender ignores 남/여 choice templates', () => {
