@@ -281,6 +281,8 @@ const buildWorkbook = async (files, results) => {
     { header: '평가경력', key: 'evaluationCareer', width: 36 },
     { header: '비고', key: 'notes', width: 28 },
     { header: '분야', key: 'field', width: 24 },
+    { header: '연락처', key: 'phone', width: 18 },
+    { header: '이메일주소', key: 'email', width: 28 },
   ];
 
   formatSheet.addRow({
@@ -296,6 +298,8 @@ const buildWorkbook = async (files, results) => {
     evaluationCareer: '- 서류, 면접 구분\n- 중복된 항목 삭제',
     notes: '- 특이사항 기재\n- 중요 전달사항 없는 경우 공란',
     field: '',
+    phone: '연락처',
+    email: '이메일주소',
   });
 
   formatSheet.addRow({
@@ -311,6 +315,8 @@ const buildWorkbook = async (files, results) => {
     evaluationCareer: '[서류] 대구시설관리공단, 한국대학교, 강남문화재단\n[면접] KB국민은행, 한국산업은행, 한국벤처투자 등 다수',
     notes: '-',
     field: '',
+    phone: '010-1234-5678',
+    email: 'sample@example.com',
   });
 
   results.forEach((row, index) => {
@@ -331,6 +337,8 @@ const buildWorkbook = async (files, results) => {
       evaluationCareer: formatEvaluationCareerForTemplate(row),
       notes: '',
       field: expertise === EMPTY_VALUE ? '' : expertise,
+      phone: row.phone === EMPTY_VALUE ? '' : row.phone,
+      email: row.email === EMPTY_VALUE ? '' : row.email,
     });
   });
 

@@ -130,6 +130,45 @@ test('splitEducationRecords keeps context when doctorate completion appears befo
   assert.equal(__testing.extractHighestEducation(records), '서울대학교 컴퓨터공학과 박사수료');
 });
 
+test('splitEducationRecords does not cross-apply degrees across separate education rows', () => {
+  assert.deepEqual(
+    __testing.splitEducationRecords('한국방송통신대학교 영어영문학 학사\n세종대학교 관광경영학 석사\n세종대학교 호텔관광경영학 박사'),
+    [
+      '한국방송통신대학교 영어영문학 학사',
+      '세종대학교 관광경영학 석사',
+      '세종대학교 호텔관광경영학 박사',
+    ]
+  );
+
+  assert.deepEqual(
+    __testing.splitEducationRecords('연세대학교 행정학과 학사\n연세대학교 경제학과 석사\n항공대학교 경영학과 박사'),
+    [
+      '연세대학교 행정학과 학사',
+      '연세대학교 경제학과 석사',
+      '항공대학교 경영학과 박사',
+    ]
+  );
+});
+
+test('splitEducationRecords removes degree-only fragments and duplicate bracket degree labels', () => {
+  assert.deepEqual(
+    __testing.splitEducationRecords('송원대학교 아동보육학 학사\n세종대학교 산업대학원 석사과정'),
+    [
+      '송원대학교 아동보육학 학사',
+      '세종대학교 산업대학원 석사과정',
+    ]
+  );
+
+  assert.deepEqual(
+    __testing.splitEducationRecords('인하대 토목공학 공학사, 중앙대 토목시공관리 공학석사\n[박사] 경희대 건설관리 공학박사'),
+    [
+      '인하대 토목공학 공학사',
+      '중앙대 토목시공관리 공학석사',
+      '경희대 건설관리 공학박사',
+    ]
+  );
+});
+
 test('findSectionBody matches nested performance section headers instead of parent titles', () => {
   const allText = [
     '경력사항 및 주요실적',
