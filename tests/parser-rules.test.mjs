@@ -244,6 +244,25 @@ test('chooseAffiliation preserves department chair spacing from current career',
   );
 });
 
+test('chooseAffiliation recovers consulting and office names from current career', () => {
+  assert.equal(
+    __testing.chooseAffiliation('', '現 더이음컨설팅 대표 – HR, 인사, 채용, 컨설팅 – 2021 년 현재 前 커리어넷 기업영업팀 과장'),
+    '더이음컨설팅 대표'
+  );
+  assert.equal(
+    __testing.chooseAffiliation('', '現 VAERKSTED 행정 및 브랜딩 컨설팅 (2024. 9~현재) 前 CJ 제일제당 법무팀'),
+    'VAERKSTED 행정 및 브랜딩 컨설팅'
+  );
+  assert.equal(
+    __testing.chooseAffiliation('', '(2019. 06. 11~현재) 시야 건축사사무소 대표 (건축계획 · 설계)'),
+    '시야 건축사사무소 대표'
+  );
+  assert.equal(
+    __testing.chooseAffiliation('', '現 Ericsson Korea(에릭슨) 인사본부 상무, 인사 총괄 (2024 년 01 월~현재) 前 Hilti Group 글로벌 해양 사업 부문 인사본부 총괄'),
+    'Ericsson Korea(에릭슨) 인사본부 상무'
+  );
+});
+
 test('sanitizeAffiliation removes standalone contact label tails', () => {
   assert.equal(
     __testing.sanitizeAffiliation('한국인터넷진흥원 / 디지털위협예방본부 / 디지털보안인증단 단장 핸드폰 )010-3043-9470'),

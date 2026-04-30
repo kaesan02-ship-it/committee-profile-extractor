@@ -1161,7 +1161,7 @@ const extractExpertise = (text = '') => {
 };
 
 const AFFILIATION_FALSE_EDUCATION_PATTERN = /(학사|석사|박사|전문학사|최종학력|졸업|수료|재학|학위)/i;
-const AFFILIATION_ORG_PATTERN = /(대학교|대학원|대학|연구원|연구소|센터|병원|재단|법인|회사|기업|공사|공단|기관|캠퍼스)/i;
+const AFFILIATION_ORG_PATTERN = /(대학교|대학원|대학|연구원|연구소|센터|병원|재단|법인|회사|기업|공사|공단|기관|캠퍼스|컨설팅|사무소)/i;
 const AFFILIATION_DEPARTMENT_PATTERN = /(학과|학부|전공|연구소|센터|본부|실|팀|과|처|부)/i;
 const AFFILIATION_MEMBERSHIP_PATTERN = /((?:한국|대한|국제|미국|세계|IEEE|ICROS|KSME|KICS|ACS|AIChE)[^()]{0,30}?(?:학회|협회|위원회|연구회)|정회원|종신회원|상임이사|부회장|사업이사|자문위원|평가위원|심사위원|선정위원|운영위원)/i;
 const AFFILIATION_HEADER_NOISE_PATTERN = /(위원\s*성명|성명|생년월일|출생년월일|성별|전문분야|최종학력|학력|주요경력|경력|연락처|이메일|주소)/i;
@@ -1235,6 +1235,14 @@ const stripAffiliationTail = (text = '') => {
     .replace(/\s{2,}/g, ' ')
     .trim();
 
+  const colonIndex = value.search(/\s*[:：]\s+/);
+  if (colonIndex > 0) {
+    const head = value.slice(0, colonIndex).trim();
+    if (head.length >= 3 && hasAffiliationSignal(head) && (!hasPosition(head) || value.length > 55)) {
+      value = head;
+    }
+  }
+
   const positionMatch = value.match(AFFILIATION_POSITION_REGEX);
   if (positionMatch?.[1] && hasAffiliationHint(positionMatch[1])) {
     value = positionMatch[1].trim();
@@ -1281,7 +1289,7 @@ const sanitizeAffiliation = (text = '') => {
     .replace(/\(\s*연락처[^)]*\)/gi, ' ')
     .replace(/(?:핸드폰번호|핸드폰|메일주소|이메일|연락처|휴대폰|휴대전화|Tel|Telephone|Mobile|Phone)\s*[):：]?\s*.*$/i, ' ')
     .replace(/\\/g, ' ')
-    .replace(/\s+-\s+.*$/, '')
+    .replace(/\s+[-–—]\s+.*$/, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 
@@ -1311,6 +1319,7 @@ const scoreAffiliationCandidate = (line = '', source = 'affiliation') => {
   const hasSignal = hasAffiliationSignal(value);
   if (source === 'career-current') score += 6;
   if (hasCurrentMarker(line)) score += 4;
+  if (PREVIOUS_PREFIX_PATTERN.test(cleanInline(line))) score -= 8;
   if (hasAffiliationHint(value)) score += 3;
   if (AFFILIATION_ORG_PATTERN.test(value)) score += 3;
   if (AFFILIATION_DEPARTMENT_PATTERN.test(value)) score += 3;
@@ -1378,11 +1387,21 @@ const extractCurrentCareerLine = (text = '') => {
   const directSegments = splitCurrentCareerSegments(text);
 
   const fallbackEntries = splitCareerEntries(text)
-    .map((line) => line.split(/\s+(?=(?:前|전|\(전\))\s*[)\-:：]?)/)[0])
+    .map((line) => line.split(/\s+(?=(?:前|\(전\)|전(?=\s|[)\-:：]))\s*[)\-:：]?)/)[0])
     .map((line) => safeText(line))
     .filter(Boolean);
 
   const entries = uniq([...directSegments, ...fallbackEntries]);
+
+  const leadingCurrentRaw = safeText(text).split(/\s+(?=(?:前|\(전\)|전(?=\s|[)\-:：]))\s*[)\-:：]?)/)[0];
+  const leadingCurrentValue = sanitizeAffiliation(leadingCurrentRaw);
+  if (
+    leadingCurrentValue &&
+    (hasCurrentMarker(leadingCurrentRaw) || /현재/.test(leadingCurrentRaw) || OPEN_ENDED_CAREER_PATTERN.test(leadingCurrentRaw)) &&
+    isReviewableAffiliation(leadingCurrentValue)
+  ) {
+    return leadingCurrentValue;
+  }
 
   const currentCandidates = entries
     .map((line, index) => ({ line, index }))
