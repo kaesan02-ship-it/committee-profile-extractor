@@ -1563,13 +1563,15 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
       findLabeledValue(allNodes, FIELD_LABELS.education, { lookAhead: 16, validator: cleanInline })
     );
     const educationRecords = splitEducationRecords(educationBody);
+    const educationFallback = firstNonEmptyPreserveLines(tidyMultiline(prepareEducationSource(educationBody)), EMPTY_VALUE);
 
-    row.educationRaw = firstNonEmptyPreserveLines(tidyMultiline(prepareEducationSource(educationBody)), EMPTY_VALUE);
-    row.educationDetails = firstNonEmptyPreserveLines(tidyMultiline(formatEducationDetails(educationRecords)), EMPTY_VALUE);
+    row.educationRaw = educationFallback;
+    row.educationDetails = firstNonEmptyPreserveLines(tidyMultiline(formatEducationDetails(educationRecords)), educationFallback, EMPTY_VALUE);
     row.educationList = educationRecords;
     row.education = firstNonEmpty(
       extractHighestEducation(educationRecords),
       educationRecords[educationRecords.length - 1],
+      educationFallback,
       EMPTY_VALUE
     );
 
