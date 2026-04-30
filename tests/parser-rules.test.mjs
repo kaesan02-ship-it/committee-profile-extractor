@@ -169,6 +169,37 @@ test('splitEducationRecords removes degree-only fragments and duplicate bracket 
   );
 });
 
+test('splitEducationRecords expands bracket degree labels with optional counts', () => {
+  assert.deepEqual(
+    __testing.splitEducationRecords('[학사]\n국민대학교 법학과 [석사]\n서울미디어대학원 AI 소프트웨어학과 (AI 기술경영) 공학석사在'),
+    [
+      '국민대학교 법학과 학사',
+      '서울미디어대학원 AI 소프트웨어학과 (AI 기술경영) 공학석사',
+    ]
+  );
+
+  assert.deepEqual(
+    __testing.splitEducationRecords('[학사 / 5] 경남대 노문학, 한국방송통신대 통계데이터학 / 컴퓨터과학 / 미디어영상학 / 교육학 [석사 / 2] 단국대 경영대학원 경영학 석사, 한국방송통신대 통계대학원 통계데이터학 석사 [박사 / 1] 한성대 컨설팅대학원 매니지먼트 전공 박사'),
+    [
+      '단국대 경영대학원 경영학 석사',
+      '한국방송통신대 통계대학원 통계데이터학 석사',
+      '한성대 컨설팅대학원 매니지먼트 전공 박사',
+      '경남대 노문학, 한국방송통신대 통계데이터학 컴퓨터과학 미디어영상학 교육학 학사',
+    ]
+  );
+});
+
+test('splitEducationRecords preserves context for colon degree labels', () => {
+  assert.deepEqual(
+    __testing.splitEducationRecords('박사: 한양대학교 컴퓨터공학 박사수료 (세부전공: 자연어처리, 인공지능) 석사: 한양대학교 컴퓨터공학과 일반대학원 학사: 경주대학교 컴퓨터공학과'),
+    [
+      '한양대학교 컴퓨터공학 박사수료',
+      '한양대학교 컴퓨터공학과 일반대학원 석사',
+      '경주대학교 컴퓨터공학과 학사',
+    ]
+  );
+});
+
 test('findSectionBody matches nested performance section headers instead of parent titles', () => {
   const allText = [
     '경력사항 및 주요실적',

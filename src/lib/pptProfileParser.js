@@ -431,18 +431,15 @@ const educationCanonicalKey = (text = '') => {
     .replace(/[\s()[\]{}.,·/:-]/g, '');
 };
 
+const normalizeDegreePrefixLabels = (text = '') => String(text ?? '')
+  .replace(/(^|\s)(학사|석사|박사|전문학사|박사수료|박사과정수료|석박사\s*통합|석박사통합)\s*[:：]\s*/gi, '$1[$2] ');
+
 const getEducationSourceLines = (text = '') => {
-  const rawLines = String(text ?? '')
+  const source = normalizeDegreePrefixLabels(text);
+  return String(source ?? '')
     .split(/\n+|\s*;\s*|\s+\|\s+|\s+[ⅠI]\s+/)
     .map((line) => normalizeEducationRecord(sanitizeBracketArtifacts(line)))
     .filter(Boolean);
-
-  const preparedLines = prepareEducationSource(text)
-    .split(/\n+|\s*;\s*|\s+\|\s+|\s+[ⅠI]\s+/)
-    .map((line) => normalizeEducationRecord(line))
-    .filter(Boolean);
-
-  return uniq([...rawLines, ...preparedLines]);
 };
 
 const splitDegreeList = (text = '') => {
@@ -498,6 +495,7 @@ const isStandaloneDegreeRecord = (record = '') => {
   const normalized = cleanInline(record)
     .replace(/^[\s[(]+/g, '')
     .replace(/[\s)\]]+$/g, '')
+    .replace(/\s*\/\s*\d+$/g, '')
     .replace(/\s+/g, '');
 
   return DEGREE_ONLY_PATTERN.test(normalized) || DEGREE_ONLY_PATTERN.test(cleanInline(record));
@@ -534,7 +532,7 @@ const attachContextToDegreeOnly = (record = '', context = '') => {
 const extractBracketTaggedEducation = (line = '') => {
   const degreePattern = [...EDUCATION_DEGREE_KEYWORDS, '석박사 통합'].map(escapeRegex).join('|');
   const regex = new RegExp(
-    `(?:^|[\\s,])(?:\\[|\\()\\s*(${degreePattern})\\s*(?:\\]|\\))(?!\\s*[,;/])\\s*([^\\[\\(]+?)(?=(?:\\s*(?:\\[|\\()\\s*(?:${degreePattern})\\s*(?:\\]|\\)))|$)`,
+    `(?:^|[\\s,])(?:\\[|\\()\\s*(${degreePattern})(?:\\s*/\\s*\\d+)?\\s*(?:\\]|\\))\\s*([^\\[\\(]+?)(?=(?:\\s*(?:\\[|\\()\\s*(?:${degreePattern})(?:\\s*/\\s*\\d+)?\\s*(?:\\]|\\)))|$)`,
     'gi'
   );
 
@@ -542,14 +540,19 @@ const extractBracketTaggedEducation = (line = '') => {
 
   return uniq(
     matches
-      .flatMap((match) => expandIntegratedDegree(match[2], normalizeDegreeLabel(match[1])))
+      .flatMap((match) => {
+        const body = normalizeEducationRecord(match[2]).replace(/[,:;/-]\s*$/g, '').trim();
+        return DEGREE_PATTERN_GLOBAL.test(body)
+          ? extractDegreeAnchoredSegments(body)
+          : expandIntegratedDegree(body, normalizeDegreeLabel(match[1]));
+      })
       .filter(Boolean)
   );
 };
 
 const extractTaggedEducationSegments = (text = '') => {
   const degreePattern = [...EDUCATION_DEGREE_KEYWORDS, '석박사 통합'].map(escapeRegex).join('|');
-  const regex = new RegExp(`(?:\\[|\\()\\s*(${degreePattern})\\s*(?:\\]|\\))(?!\\s*[,;/])\\s*([\\s\\S]*?)(?=(?:\\s*(?:\\[|\\()\\s*(?:${degreePattern})\\s*(?:\\]|\\)))|$)`, 'gi');
+  const regex = new RegExp(`(?:\\[|\\()\\s*(${degreePattern})(?:\\s*/\\s*\\d+)?\\s*(?:\\]|\\))\\s*([\\s\\S]*?)(?=(?:\\s*(?:\\[|\\()\\s*(?:${degreePattern})(?:\\s*/\\s*\\d+)?\\s*(?:\\]|\\)))|$)`, 'gi');
   const source = compactEducationSpacing(text);
   const matches = Array.from(source.matchAll(regex));
 
@@ -558,7 +561,9 @@ const extractTaggedEducationSegments = (text = '') => {
       .flatMap((match) => {
         const body = normalizeEducationRecord(match[2]).replace(/[,:;/-]\s*$/g, '').trim();
         const degree = normalizeDegreeLabel(match[1]);
-        return expandIntegratedDegree(body, degree);
+        return DEGREE_PATTERN_GLOBAL.test(body)
+          ? extractDegreeAnchoredSegments(body)
+          : expandIntegratedDegree(body, degree);
       })
       .filter(Boolean)
   );
@@ -566,7 +571,7 @@ const extractTaggedEducationSegments = (text = '') => {
 
 const extractParentheticalEducationSegments = (text = '') => {
   const degreePattern = [...EDUCATION_DEGREE_KEYWORDS, '석박사 통합'].map(escapeRegex).join('|');
-  const regex = new RegExp(`([^,;\\n]+?)\\s*(?:\\(|\\[)\\s*(${degreePattern})\\s*(?:\\)|\\])`, 'gi');
+  const regex = new RegExp(`([^,;\\n]+?)\\s*\\(\\s*(${degreePattern})\\s*\\)`, 'gi');
   const source = compactEducationSpacing(text);
   const records = [];
 
@@ -778,7 +783,8 @@ const explodeEducationRecord = (record = '') => {
 
 const canonicalizeSingleEducationRecord = (record = '') => {
   let value = normalizeEducationRecord(record)
-    .replace(/^(?:\[|\()?\s*(?:학사|석사|박사|전문학사|박사수료|박사과정수료|석박사\s*통합|석박사통합)\s*(?:\]|\))\s*/i, '')
+    .replace(/^(?:\[|\()?\s*(?:학사|석사|박사|전문학사|박사수료|박사과정수료|석박사\s*통합|석박사통합)(?:\s*\/\s*\d+)?\s*(?:\]|\))\s*/i, '')
+    .replace(/^\d+\s+/, '')
     .replace(/((?:공학|경영학|문학|교육학|법학|행정학|이학|의학|약학|체육학)?(?:학사|석사|박사))\s+(학사|석사|박사)$/i, (match, fullDegree, degree) => (
       fullDegree.endsWith(degree) ? fullDegree : match
     ))
@@ -790,7 +796,7 @@ const canonicalizeSingleEducationRecord = (record = '') => {
     /^(.*?(?:학과|학부|전공))\s+((?:[A-Za-z가-힣].*?(?:대학교|대학원|대학|교육원|University|College|School|Institute).*(?:학사|석사|박사|전문학사|박사수료|박사과정수료|석박사\s*통합|석박사통합).*))$/i
   );
 
-  if (carriedContextMatch?.[2]) {
+  if (carriedContextMatch?.[2] && !/^(?:일반대학원|특수대학원|대학원)(?:\s|$)/i.test(carriedContextMatch[2])) {
     value = normalizeEducationRecord(carriedContextMatch[2]);
   }
 
@@ -858,10 +864,12 @@ const getSourceLineEducationRecords = (sourceLines = []) => {
     sourceLines
       .flatMap((line) => {
         const direct = canonicalizeSingleEducationRecord(line);
+        const hasDegreeTag = new RegExp(`(?:\\[|\\()\\s*(?:${[...EDUCATION_DEGREE_KEYWORDS, '석박사 통합'].map(escapeRegex).join('|')})(?:\\s*/\\s*\\d+)?\\s*(?:\\]|\\))`, 'i').test(line);
         return [
-          ...(DEGREE_PATTERN_GLOBAL.test(direct) && !isStandaloneDegreeRecord(direct) ? [direct] : []),
+          ...(!hasDegreeTag && DEGREE_PATTERN_GLOBAL.test(direct) && !isStandaloneDegreeRecord(direct) ? [direct] : []),
           ...extractTaggedEducationSegments(line),
           ...extractParentheticalEducationSegments(line),
+          ...extractDegreeAnchoredSegments(line),
           ...extractBracketTaggedEducation(line),
           ...expandParentheticalDegrees(line),
         ];
@@ -876,15 +884,16 @@ const getSourceLineEducationRecords = (sourceLines = []) => {
 };
 
 const splitEducationRecords = (text = '') => {
-  const sourceLines = getEducationSourceLines(text);
-  const taggedSegments = extractTaggedEducationSegments(text);
-  const parentheticalSegments = extractParentheticalEducationSegments(text);
+  const normalizedText = normalizeDegreePrefixLabels(text);
+  const sourceLines = getEducationSourceLines(normalizedText);
+  const taggedSegments = extractTaggedEducationSegments(normalizedText);
+  const parentheticalSegments = extractParentheticalEducationSegments(normalizedText);
   if (parentheticalSegments.length >= 2) {
     return uniq(parentheticalSegments.map((record) => canonicalizeSingleEducationRecord(record))).filter(Boolean);
   }
 
-  const anchoredSegments = extractDegreeAnchoredSegments(text);
-  const fallbackSegments = splitBullets(prepareEducationSource(text))
+  const anchoredSegments = extractDegreeAnchoredSegments(normalizedText);
+  const fallbackSegments = splitBullets(prepareEducationSource(normalizedText))
     .flatMap((line) => line.split(/\n+/))
     .flatMap((line) => sanitizeBracketArtifacts(line).split(/\s*;\s*|\s+\|\s+|\s+[ⅠI]\s+/))
     .map((line) => normalizeEducationRecord(line))
@@ -1009,21 +1018,28 @@ const splitEducationRecords = (text = '') => {
 
   const balancedCandidates = withoutStandaloneDuplicates.filter((record) => hasBalancedBrackets(record));
   const stableRecords = balancedCandidates.length ? balancedCandidates : withoutStandaloneDuplicates;
-  const sourceLineRecords = getSourceLineEducationRecords(sourceLines);
+  const hasAnyDegreeTag = new RegExp(`(?:\\[|\\()\\s*(?:${[...EDUCATION_DEGREE_KEYWORDS, '석박사 통합'].map(escapeRegex).join('|')})(?:\\s*/\\s*\\d+)?\\s*(?:\\]|\\))`, 'i').test(normalizedText);
+  const sourceLineRecords = hasAnyDegreeTag
+    ? getSourceLineEducationRecords([normalizedText])
+    : getSourceLineEducationRecords(sourceLines);
   const sourceLineRecordKeys = new Set(sourceLineRecords.map((record) => educationCanonicalKey(record)));
   const stablePool = uniq([...stableRecords, ...sourceLineRecords]);
-  const sourceOrderKey = normalizeEducationRecord(prepareEducationSource(text))
+  const sourceOrderKey = normalizeEducationRecord(prepareEducationSource(normalizedText))
+    .toLowerCase()
+    .replace(/[\s()[\]{}.,·/:-]/g, '');
+  const rawOrderKey = normalizeEducationRecord(normalizedText)
     .toLowerCase()
     .replace(/[\s()[\]{}.,·/:-]/g, '');
   const sourceSupportedRecords = stablePool.filter((record) => {
     const key = educationCanonicalKey(record);
-    if (sourceLines.length > 1 && !sourceOrderKey.includes(key)) return false;
-    if (sourceLines.length > 1 && sourceLineRecordKeys.has(key)) return true;
-    if (sourceLines.length > 1) return true;
+    if (hasAnyDegreeTag && sourceLineRecordKeys.size) return sourceLineRecordKeys.has(key);
+    if (sourceLineRecordKeys.has(key)) return true;
+    if (!rawOrderKey.includes(key)) return false;
     return isSourceSupportedEducationRecord(record, sourceLines);
   });
   const supportedRecords = sourceSupportedRecords
     .filter((record) => !hasCoveredStandaloneAlternative(record, sourceSupportedRecords))
+    .filter((record) => !isStandaloneDegreeRecord(record))
     .filter((record) => !isCoveredByMoreSpecificEducationRecord(record, sourceSupportedRecords));
 
   const canonicalBest = new Map();
@@ -1432,7 +1448,7 @@ const calcAge = (birth = '') => {
   const normalizedBirth = extractBirth(birth);
   const year = parseInt(String(normalizedBirth).slice(0, 4), 10);
   if (!year) return EMPTY_VALUE;
-  return `${new Date().getFullYear() - year + 1}세`;
+  return `${new Date().getFullYear() - year}세`;
 };
 
 const findLabeledValue = (nodes, labels, options = {}) => {
