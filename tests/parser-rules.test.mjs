@@ -61,6 +61,13 @@ test('splitEducationRecords removes combined mixed-degree fallback records', () 
   assert.equal(__testing.extractHighestEducation(records), '한양사이버대학원 IT MBA 석사');
 });
 
+test('splitEducationRecords stops before inline career section headers', () => {
+  assert.deepEqual(
+    __testing.splitEducationRecords('충북 대 학교 건축공학과 학사 ➢ 경력사항 및 수행실적'),
+    ['충북 대 학교 건축공학과 학사']
+  );
+});
+
 test('extractHighestEducation prefers the highest degree over a longer foreign-school lower degree', () => {
   const records = __testing.splitEducationRecords(
     '연세대학원 정보미디어 석사 Macarthur Community College (ITTI) / Information Technology Diploma 학사'
