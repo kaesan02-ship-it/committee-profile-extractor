@@ -38,7 +38,9 @@ const bulletizeMultiline = (value = '') => {
 
 const cleanupEntry = (value = '') => String(value ?? '')
   .replace(/\s+/g, ' ')
-  .replace(/\s*([~∼〜-])\s*/g, '$1')
+  .replace(/\s*([~∼〜])\s*/g, '$1')
+  .replace(/(\d)\s*-\s*(\d)/g, '$1-$2')
+  .replace(/\s+-\s+/g, ' - ')
   .replace(/\(\s+/g, '(')
   .replace(/\s+\)/g, ')')
   .replace(/\s+([,.;:：])/g, '$1')
@@ -56,20 +58,42 @@ const stripEvaluationSections = (value = '') => String(value ?? '')
 
 const CAREER_MARKER_LOOKAHEAD = /(?=(?:現|前)\s*[).:：-]?\s*|(?:현재|현|전)\s*(?:[).:：-]\s*|\s+))/g;
 
+const isCareerHeaderOnlyLine = (line = '') => /^(?:및\s*)?(?:주요실적\s*)?(?:경력사항|주요이력|주요경력)$/i.test(cleanupEntry(line));
+const isDateOnlyCareerFragment = (line = '') => {
+  const cleaned = cleanupEntry(line);
+  return /^\(?\s*\d{4}/.test(cleaned)
+    && /^[\s\d().년월일~∼〜-]*(?:현재|現)?[\s\d().년월일~∼〜-]*\)?$/.test(cleaned);
+};
+
+const mergeCareerDateFragments = (entries = []) => {
+  const merged = [];
+  entries.forEach((entry) => {
+    if (isDateOnlyCareerFragment(entry) && merged.length) {
+      merged[merged.length - 1] = cleanupEntry(`${merged[merged.length - 1]} ${entry}`);
+      return;
+    }
+    merged.push(entry);
+  });
+  return merged;
+};
+
 const splitCareerEntries = (value = '') => {
   const text = normalizeMultiline(stripEvaluationSections(value));
   if (text === EMPTY_VALUE) return [];
 
   return unique(
-    text
+    mergeCareerDateFragments(
+      text
       .replace(new RegExp(`\\s+${CAREER_MARKER_LOOKAHEAD.source}`, 'g'), '\n')
       .replace(/\s+(?=\(?\s*\d{4}\s*[.]\s*\d{1,2}(?:\s*[.]\s*\d{1,2})?\s*[~∼〜-]\s*(?:\d{4}|현재|現))/g, '\n')
       .replace(/\s+(?=\(?\s*\d{4}\s*[.]\s*\d{1,2}(?:\s*[.]\s*\d{1,2})?\s*[~∼〜-]\s*\d{4})/g, '\n')
       .replace(/\s+(?=\d{4}\s*년\s*\d{1,2}\s*월\s*[~∼〜-])/g, '\n')
       .split(/\n+/)
       .map(stripEvaluationNoise)
+      .filter((line) => !isCareerHeaderOnlyLine(line))
       .filter((line) => line.length >= 3)
       .filter((line) => !isEvaluationOnlyLine(line))
+    )
   );
 };
 

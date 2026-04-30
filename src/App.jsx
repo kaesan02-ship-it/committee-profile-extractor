@@ -269,6 +269,8 @@ const buildWorkbook = async (files, results) => {
 
   const formatSheet = workbook.addWorksheet('4.면접관양식');
   formatSheet.columns = [
+    { header: '원본폴더', key: 'sourceFolder', width: 22 },
+    { header: '원본상대경로', key: 'sourceRelativePath', width: 46 },
     { header: 'No.', key: 'no', width: 8 },
     { header: '이름', key: 'name', width: 12 },
     { header: '성별', key: 'gender', width: 10 },
@@ -282,6 +284,8 @@ const buildWorkbook = async (files, results) => {
   ];
 
   formatSheet.addRow({
+    sourceFolder: '원본 폴더 확인용',
+    sourceRelativePath: '원본 상대경로 확인용',
     no: '번호작성',
     name: '이름작성',
     gender: '남 or 여 작성',
@@ -295,6 +299,8 @@ const buildWorkbook = async (files, results) => {
   });
 
   formatSheet.addRow({
+    sourceFolder: '예시 폴더',
+    sourceRelativePath: '예시폴더/홍길동_프로필.pptx',
     no: '예시',
     name: '홍길동',
     gender: '남',
@@ -313,6 +319,8 @@ const buildWorkbook = async (files, results) => {
     const expertise = normalizeText(row.expertise);
 
     formatSheet.addRow({
+      sourceFolder: row.sourceFolder || '',
+      sourceRelativePath: row.sourceRelativePath || '',
       no: index + 1,
       name: name === EMPTY_VALUE ? '' : name,
       gender: gender === EMPTY_VALUE ? '' : gender,
