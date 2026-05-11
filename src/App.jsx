@@ -383,15 +383,17 @@ function App() {
     const collected = [];
 
     for (const file of acceptedFiles) {
-      if (file.name.endsWith('.pptx') && !file.name.startsWith('~$')) {
+      const lowerFileName = file.name.toLowerCase();
+
+      if (lowerFileName.endsWith('.pptx') && !file.name.startsWith('~$')) {
         collected.push(createUploadItem(file, file.webkitRelativePath || file.name));
         continue;
       }
 
-      if (file.name.endsWith('.zip')) {
+      if (lowerFileName.endsWith('.zip')) {
         const zip = await JSZip.loadAsync(file);
         const pptxNames = Object.keys(zip.files).filter(
-          (name) => name.endsWith('.pptx') && !name.split('/').pop().startsWith('~$')
+          (name) => name.toLowerCase().endsWith('.pptx') && !name.split('/').pop().startsWith('~$')
         );
 
         for (const name of pptxNames) {
