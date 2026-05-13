@@ -99,11 +99,9 @@ const createStamp = () => {
 
 const applySheetStyle = (worksheet, options = {}) => {
   const {
-    frozenColumns = 0,
     headerColor = '1F4E78',
   } = options;
 
-  worksheet.views = [{ state: 'frozen', xSplit: frozenColumns, ySplit: 1 }];
   worksheet.autoFilter = {
     from: { row: 1, column: 1 },
     to: { row: 1, column: worksheet.columnCount },
@@ -211,7 +209,7 @@ const buildWorkbook = async (files, results) => {
     );
   });
 
-  applySheetStyle(dbSheet, { frozenColumns: 4, headerColor: '1F4E78' });
+  applySheetStyle(dbSheet, { headerColor: '1F4E78' });
 
   const detailSheet = workbook.addWorksheet('2.원문정리');
   detailSheet.columns = [
@@ -246,7 +244,7 @@ const buildWorkbook = async (files, results) => {
     );
   });
 
-  applySheetStyle(detailSheet, { frozenColumns: 3, headerColor: '2F6B3C' });
+  applySheetStyle(detailSheet, { headerColor: '2F6B3C' });
 
   const summarySheet = workbook.addWorksheet('3.요약');
   summarySheet.columns = [
@@ -265,7 +263,7 @@ const buildWorkbook = async (files, results) => {
   ];
 
   summaryRows.forEach((item) => summarySheet.addRow(item));
-  applySheetStyle(summarySheet, { frozenColumns: 1, headerColor: '7A4A00' });
+  applySheetStyle(summarySheet, { headerColor: '7A4A00' });
 
   const formatSheet = workbook.addWorksheet('4.면접관양식');
   formatSheet.columns = [
@@ -345,7 +343,7 @@ const buildWorkbook = async (files, results) => {
   formatSheet.eachRow((row, rowNumber) => {
     row.height = rowNumber <= 3 ? 48 : 72;
   });
-  applySheetStyle(formatSheet, { frozenColumns: 2, headerColor: '4C4F57' });
+  applySheetStyle(formatSheet, { headerColor: '4C4F57' });
 
   return workbook;
 };
@@ -485,7 +483,7 @@ function App() {
 
       <div className="guide-box">
         <strong>이번 저장 형식 개선</strong><br />
-        학력상세 / 경력상세 컬럼을 추가하고, 엑셀에서 줄바꿈·열너비·헤더색·필터·상단 고정을 적용합니다.
+        학력상세 / 경력상세 컬럼을 추가하고, 엑셀에서 줄바꿈·열너비·헤더색·필터를 적용합니다.
       </div>
 
       <div className="upload-options">
