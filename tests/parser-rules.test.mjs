@@ -51,6 +51,12 @@ test('sanitizeAffiliation removes contact and open-ended date tails', () => {
   assert.equal(__testing.sanitizeAffiliation('한국중소기업금융협회 본부장'), '한국중소기업금융협회 본부장');
 });
 
+test('sanitizeAffiliation keeps Jeon-prefixed university names', () => {
+  assert.equal(__testing.sanitizeAffiliation('現 전북 대학교 경영학과 교수 (2025 년~현재)'), '전북대학교 경영학과 교수');
+  assert.equal(__testing.sanitizeAffiliation('現 전남 대학교 국제처 국제부처장 (2026 년~현재)'), '전남대학교 국제처 국제부처장');
+  assert.equal(__testing.sanitizeAffiliation('전 한국대학교 연구원'), '한국대학교연구원');
+});
+
 test('splitEducationRecords removes combined mixed-degree fallback records', () => {
   const records = __testing.splitEducationRecords('한국외국어대학교 이란어 / 경영학 (부) 학사 한양사이버대학원 IT MBA 석사');
 
