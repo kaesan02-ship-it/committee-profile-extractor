@@ -225,6 +225,21 @@ test('splitEducationRecords preserves context for colon degree labels', () => {
   );
 });
 
+test('splitEducationRecords does not carry a previous degree into the next school', () => {
+  const records = __testing.splitEducationRecords([
+    '성신여자대학교 소비자심리학',
+    '박사 연세대학교 교육대학원 인적자원개발',
+    '한국외국어대학교 교육대학원 상담심리학석사 한국외국어대학교 서반아어학사',
+  ].join('\n'));
+
+  assert.deepEqual(records, [
+    '성신여자대학교 소비자심리학 박사',
+    '한국외국어대학교 교육대학원 상담심리학석사',
+    '한국외국어대학교 서반아어학사',
+  ]);
+  assert.equal(__testing.extractHighestEducation(records), '성신여자대학교 소비자심리학 박사');
+});
+
 test('findSectionBody matches nested performance section headers instead of parent titles', () => {
   const allText = [
     '경력사항 및 주요실적',

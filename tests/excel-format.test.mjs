@@ -131,6 +131,28 @@ test('formatEvaluationCareerForTemplate uses evaluationRaw from performance sect
   ].join('\n'));
 });
 
+test('formatEvaluationCareerForTemplate groups detailed interview labels', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '[인성면접] 한국중부발전, 한국농수산식품유통공사, 안성시청, 경북 안동의료원, 한국주택금융공사 [토론면접] 한전KPS, 한국수목정원관리원, 한국관광공사 [PT면접] 한국전력기술, 한국에너지공단, 지방공기업평가원 [서류면접] 아동권리보장원, 고용노동교육원, 한국부동산원, 인천공항시설관리, 남북하나재단 [면접모니터링] 부산교육청 교육공무원 채용 [공무원 채용면접] 보건복지부 국립정신건강센터 공무원 채용 업무',
+  });
+
+  assert.equal(formatted, [
+    '[서류] 아동권리보장원, 고용노동교육원, 한국부동산원, 인천공항시설관리 등',
+    '[면접] 한국중부발전, 한국농수산식품유통공사, 안성시청, 경북 안동의료원 등, 한전KPS, 한국수목정원관리원, 한국관광공사, 한국전력기술, 한국에너지공단, 지방공기업평가원, 부산교육청 교육공무원 채용, 보건복지부 국립정신건강센터 공무원 채용 업무',
+  ].join('\n'));
+});
+
+test('formatEvaluationCareerForTemplate handles interview panelist labels', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '[면접관]: 강원랜드, 국립생태원, 농업실용화재단, 국립항공박물관, 한국과학창의재단, 국립낙동강생물자원관 [기업컨설팅] SK 그룹, 롯데백화점, 존슨 & 존슨, KT, 삼성전자',
+  });
+
+  assert.equal(formatted, [
+    '[면접] 강원랜드, 국립생태원, 농업실용화재단, 국립항공박물관 등',
+    '[자문] SK 그룹, 롯데백화점, 존슨 & 존슨, KT 등',
+  ].join('\n'));
+});
+
 test('formatEvaluationCareerForTemplate does not spill a trailing evaluation label into career text', () => {
   const formatted = formatEvaluationCareerForTemplate({
     evaluationRaw: '[면접] 한국은행, 농협, 서민금융진흥원, 한국벤처투자 [서류] 서울경제진흥원',

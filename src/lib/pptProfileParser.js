@@ -1046,10 +1046,22 @@ const splitEducationRecords = (text = '') => {
   const rawOrderKey = normalizeEducationRecord(normalizedText)
     .toLowerCase()
     .replace(/[\s()[\]{}.,·/:-]/g, '');
+  const originalOrderKey = normalizeEducationRecord(prepareEducationSource(text))
+    .toLowerCase()
+    .replace(/[\s()[\]{}.,·/:-]/g, '');
+  const hasDegreeBeforeContextOnly = (record = '') => {
+    if (sourceLineRecordKeys.has(educationCanonicalKey(record))) return false;
+    const contextKey = educationCanonicalKey(extractEducationContext(record));
+    const degreeKey = educationCanonicalKey(getEducationDegreeLabels(record)[0] || '');
+    if (!contextKey || !degreeKey) return false;
+    if (originalOrderKey.includes(`${contextKey}${degreeKey}`)) return false;
+    return originalOrderKey.includes(`${degreeKey}${contextKey}`);
+  };
   const sourceSupportedRecords = stablePool.filter((record) => {
     const key = educationCanonicalKey(record);
     if (hasAnyDegreeTag && sourceLineRecordKeys.size) return sourceLineRecordKeys.has(key);
     if (sourceLineRecordKeys.has(key)) return true;
+    if (hasDegreeBeforeContextOnly(record)) return false;
     if (!rawOrderKey.includes(key)) return false;
     return isSourceSupportedEducationRecord(record, sourceLines);
   });
@@ -1703,13 +1715,17 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
     );
     const educationRecords = splitEducationRecords(educationBody);
     const educationFallback = firstNonEmptyPreserveLines(tidyMultiline(prepareEducationSource(educationBody)), EMPTY_VALUE);
+    const fallbackEducationRecords = educationFallback !== EMPTY_VALUE ? splitEducationRecords(educationFallback) : [];
+    const finalEducationRecords = fallbackEducationRecords.length && fallbackEducationRecords.length <= educationRecords.length
+      ? fallbackEducationRecords
+      : educationRecords;
 
     row.educationRaw = educationFallback;
-    row.educationDetails = firstNonEmptyPreserveLines(tidyMultiline(formatEducationDetails(educationRecords)), educationFallback, EMPTY_VALUE);
-    row.educationList = educationRecords;
+    row.educationDetails = firstNonEmptyPreserveLines(tidyMultiline(formatEducationDetails(finalEducationRecords)), educationFallback, EMPTY_VALUE);
+    row.educationList = finalEducationRecords;
     row.education = firstNonEmpty(
-      extractHighestEducation(educationRecords),
-      educationRecords[educationRecords.length - 1],
+      extractHighestEducation(finalEducationRecords),
+      finalEducationRecords[finalEducationRecords.length - 1],
       educationFallback,
       EMPTY_VALUE
     );
