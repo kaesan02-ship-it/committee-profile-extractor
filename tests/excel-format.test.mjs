@@ -153,6 +153,30 @@ test('formatEvaluationCareerForTemplate handles interview panelist labels', () =
   ].join('\n'));
 });
 
+test('formatEvaluationCareerForTemplate handles spaced evaluation labels with review blocks', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '서류 평가: 신용보증기금, 대구광역시 동구 등 면접 평가: 신용보증기금, 한국토지주택공사, 한국가스공사 등 정부과제 심사: 신용보증기금 등',
+  });
+
+  assert.equal(formatted, [
+    '[서류] 신용보증기금, 대구광역시 동구 등',
+    '[면접] 신용보증기금, 한국토지주택공사, 한국가스공사 등',
+    '[심사] 신용보증기금 등',
+  ].join('\n'));
+});
+
+test('formatEvaluationCareerForTemplate handles hyphen labels and advisory committee labels', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '서류 - NRF 한국연구재단, 한국남동발전 면접 - 한국은행, 금융감독원 <자문위원> 한국철도공사, 서울시 강동구 지속가능위원회',
+  });
+
+  assert.equal(formatted, [
+    '[서류] NRF 한국연구재단, 한국남동발전',
+    '[면접] 한국은행, 금융감독원',
+    '[자문] 한국철도공사, 서울시 강동구 지속가능위원회',
+  ].join('\n'));
+});
+
 test('formatEvaluationCareerForTemplate does not spill a trailing evaluation label into career text', () => {
   const formatted = formatEvaluationCareerForTemplate({
     evaluationRaw: '[면접] 한국은행, 농협, 서민금융진흥원, 한국벤처투자 [서류] 서울경제진흥원',
