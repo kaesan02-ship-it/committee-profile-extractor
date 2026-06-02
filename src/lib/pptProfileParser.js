@@ -149,6 +149,7 @@ const compactEducationSpacing = (text = '') => {
   });
 
   return value
+    .replace(/([가-힣]{2,})\s+대\s+학교/g, '$1대학교')
     .replace(/([가-힣A-Za-z]{2,})\s+정비\s+공\s+학/g, '$1정비공학')
     .replace(/([가-힣A-Za-z]{2,})\s+항공\s+정비\s+공\s+학/g, '$1항공정비공학')
     .replace(/항공정비공\s+학/g, '항공정비공학')

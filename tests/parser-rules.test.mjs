@@ -70,7 +70,17 @@ test('splitEducationRecords removes combined mixed-degree fallback records', () 
 test('splitEducationRecords stops before inline career section headers', () => {
   assert.deepEqual(
     __testing.splitEducationRecords('충북 대 학교 건축공학과 학사 ➢ 경력사항 및 수행실적'),
-    ['충북 대 학교 건축공학과 학사']
+    ['충북대학교 건축공학과 학사']
+  );
+});
+
+test('splitEducationRecords repairs Korean university suffix fragments only', () => {
+  assert.deepEqual(
+    __testing.splitEducationRecords('충북 대 학교 건축공학과 학사\nYale 대학교 건축대학원 건축학 석사'),
+    [
+      '충북대학교 건축공학과 학사',
+      'Yale 대학교 건축대학원 건축학 석사',
+    ]
   );
 });
 
