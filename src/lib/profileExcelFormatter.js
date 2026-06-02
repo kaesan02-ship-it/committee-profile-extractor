@@ -150,8 +150,25 @@ export const formatCareerForTemplate = (row = {}) => {
   return unique(lines).slice(0, 4).join('\n');
 };
 
+const trimRepeatedEvaluationProjectBlock = (value = '') => {
+  const source = String(value ?? '');
+  const seen = new Set();
+  const headingRegex = /\[\s*([^\]]{12,160})\s*\]/g;
+
+  for (const match of source.matchAll(headingRegex)) {
+    const heading = match[1].replace(/\s+/g, ' ').trim();
+    if (!/채용/.test(heading) || !/(평가|컨설팅)/.test(heading)) continue;
+
+    const key = heading.replace(/[^\p{L}\p{N}]+/gu, '').toLowerCase();
+    if (seen.has(key)) return source.slice(0, match.index).trim();
+    seen.add(key);
+  }
+
+  return source;
+};
+
 const extractEvaluationBlocks = (text = '') => {
-  const source = normalizeMultiline(text).replace(/\n+/g, ' ');
+  const source = trimRepeatedEvaluationProjectBlock(normalizeMultiline(text).replace(/\n+/g, ' '));
   if (source === EMPTY_VALUE) return [];
 
   const labelRegex = /(?:[<＜]\s*(서류\s*평가|서류전형|서류면접|서류|채용면접|영어면접|인바스켓면접|관찰면접|인성면접|토론면접|PT면접|피티면접|면접모니터링|공무원\s*채용면접|면접관|면접\s*평가|면접전형|면접|기업컨설팅|컨설팅|정부과제\s*심사|채용심사|심의위원|심사|자문위원|자문)\s*[>＞]\s*|\[\s*(서류\s*평가|서류전형|서류면접|서류|채용면접|영어면접|인바스켓면접|관찰면접|인성면접|토론면접|PT면접|피티면접|면접모니터링|공무원\s*채용면접|면접관|면접\s*평가|면접전형|면접|기업컨설팅|컨설팅|정부과제\s*심사|채용심사|심의위원|심사|자문위원|자문)\s*\]\s*:?\s*|(?:서류\s*평가|서류전형|서류면접|서류|채용면접|영어면접|인바스켓면접|관찰면접|인성면접|토론면접|PT면접|피티면접|면접모니터링|공무원\s*채용면접|면접관|면접\s*평가|면접전형|면접|기업컨설팅|컨설팅|정부과제\s*심사|채용심사|심의위원|심사|자문위원|자문)\s*[:：]\s*|(?:면접관\s*)?경력\s*(서류|면접)\s*[:：]?\s*|(?:면접경력|서류\s*평가\s*경력)\s*[:：]?\s*|(?:서류전형|면접전형|채용면접|서류|면접)\s*[-–]\s*|(?:^|\s)(서류|면접)\s+(?!평가|전형|심사|관련|과제|교육)(?=[가-힣A-Z0-9][^:：]{0,50}(?:은행|공단|공사|재단|진흥원|관리원|보험공사|보증공사|보증기금|연구원|병원|청|부|시청|구청|KDB|KB|IBK|LH|KOTRA|KOICA)))/g;
@@ -256,4 +273,5 @@ export const __testing = {
   compactEvaluationList,
   extractEvaluationBlocks,
   splitCareerEntries,
+  trimRepeatedEvaluationProjectBlock,
 };

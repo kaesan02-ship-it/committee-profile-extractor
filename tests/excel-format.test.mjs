@@ -177,6 +177,25 @@ test('formatEvaluationCareerForTemplate handles hyphen labels and advisory commi
   ].join('\n'));
 });
 
+test('formatEvaluationCareerForTemplate ignores a repeated evaluation project block', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '[HR Project Managing / 채용, 선발 및 평가 컨설팅 운영] 면접: BEI, PT, GD, IB, AI 면접 / 면접관 교육 및 위원장 한국은행, 한국석유공사, 한국도로공사, 한전원자력연료, 한국가스기술공사 서류: 국방기술진흥연구소, 금융감독원, KB 국민은행, 한국예탁결제원 [HR Project Managing / 채용, 선발 및 평가 컨설팅 운영] 면접: 금융감독원, 예금보험공사, 한국부동산신탁, 한국무역보험공사 서류 평가: 금융결제원, KB 국민은행, 한국예탁결제원',
+  });
+
+  assert.equal(formatted, [
+    '[서류] 국방기술진흥연구소, 금융감독원, KB 국민은행, 한국예탁결제원',
+    '[면접] BEI, PT, GD, IB 등',
+  ].join('\n'));
+});
+
+test('formatEvaluationCareerForTemplate keeps distinct interview blocks without repeated project headings', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '[인성면접] 한국은행, 금융감독원 [토론면접] 한국수출입은행, 한국무역보험공사',
+  });
+
+  assert.equal(formatted, '[면접] 한국은행, 금융감독원, 한국수출입은행, 한국무역보험공사');
+});
+
 test('formatEvaluationCareerForTemplate does not spill a trailing evaluation label into career text', () => {
   const formatted = formatEvaluationCareerForTemplate({
     evaluationRaw: '[면접] 한국은행, 농협, 서민금융진흥원, 한국벤처투자 [서류] 서울경제진흥원',
