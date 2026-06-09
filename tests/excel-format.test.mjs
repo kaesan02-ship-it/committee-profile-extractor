@@ -236,6 +236,22 @@ test('formatEvaluationCareerForTemplate cleans leading colons and profile tails'
   assert.equal(formatted, '[면접] 하나은행, 국민은행, 한국연구재단');
 });
 
+test('formatEvaluationCareerForTemplate handles public recruitment and panel labels', () => {
+  assert.equal(
+    formatEvaluationCareerForTemplate({
+      evaluationRaw: '[공채면접] 한전 KPS, 사천시청, 한국도로공사 [공채서류전형] 코레일테크, IBK 기업은행',
+    }),
+    '[서류] 코레일테크, IBK 기업은행\n[면접] 한전 KPS, 사천시청, 한국도로공사'
+  );
+
+  assert.equal(
+    formatEvaluationCareerForTemplate({
+      evaluationRaw: '< 면접 위원 > 대구은행 글로벌부문 직원 선발 대구은행 해외유학생 인턴 선발 < 강사 이력 > 금융감독원 청소년 금융경제교육 강사',
+    }),
+    '[면접] 대구은행 글로벌부문 직원 선발 대구은행 해외유학생 인턴 선발'
+  );
+});
+
 test('formatCareerForTemplate excludes explicit evaluation blocks from career summary', () => {
   const formatted = formatCareerForTemplate({
     affiliation: 'HR 임팩트 대표',

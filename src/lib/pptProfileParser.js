@@ -1519,6 +1519,88 @@ const findLabeledValue = (nodes, labels, options = {}) => {
   return '';
 };
 
+const EDUCATION_FALLBACK_SCHOOL_PATTERN = /(?:대학교|대학원|대학|University|College|KAIST|POSTECH|주립대)/i;
+const EDUCATION_FALLBACK_DEGREE_PATTERN = /(?:박사|석사|학사|학위|졸업|수료|전공|학과|Ph\.?\s*D|MBA|M\.?\s*[AS]|B\.?\s*[AS])/i;
+const EDUCATION_FALLBACK_SECTION_NOISE_PATTERN = /(?:자격|이수|수상|표창|논문|저서|강사|면접|서류|심사|평가|경력|수행실적|주요이력)/;
+
+const extractEducationFallbackRecords = (nodes = []) => {
+  const candidateLines = nodes
+    .map((node) => cleanInline(node))
+    .filter((line) => EDUCATION_FALLBACK_SCHOOL_PATTERN.test(line))
+    .filter((line) => EDUCATION_FALLBACK_DEGREE_PATTERN.test(line))
+    .filter((line) => !EMAIL_PATTERN.test(line) && !PHONE_FORMATTED_PATTERN.test(line));
+  const cleanCandidateLines = candidateLines.filter((line) => !EDUCATION_FALLBACK_SECTION_NOISE_PATTERN.test(line));
+  const sourceLines = cleanCandidateLines.length
+    ? cleanCandidateLines
+    : candidateLines.filter((line) => splitEducationRecords(line).length >= 2);
+  const candidates = sourceLines
+    .flatMap((line) => splitEducationRecords(line));
+
+  const uniqueCandidates = uniq(candidates);
+  return uniqueCandidates
+    .filter((record) => !/^\([^)]{1,20}\)\s*/.test(record))
+    .filter((record) => !uniqueCandidates.some((other) => other !== record && other.includes(record) && other.length > record.length))
+    .filter((record) => !isCoveredByMoreSpecificEducationRecord(record, uniqueCandidates));
+};
+
+const EVALUATION_FALLBACK_LABEL_PATTERN = /(?:\[?\s*공채\s*(?:면접|서류전형|서류평가|서류심사)\s*\]?|<\s*면접\s*위원\s*>|\[\s*(?:면접|서류|서류전형|서류평가|서류심사)\s*\])/;
+const EVALUATION_FALLBACK_STOP_PATTERN = /^(?:\[?\s*기타|자격|자격\s*및|이수|수상|저서|논문|강사\s*이력|<\s*강사\s*이력\s*>|대외수상|Assessor\s*Profile|면접관\s*Profile|이력서\s*Profile)/i;
+
+const extractEvaluationFallbackBody = (nodes = []) => {
+  const blocks = [];
+
+  for (let index = 0; index < nodes.length; index += 1) {
+    const current = cleanInline(nodes[index]);
+    if (!EVALUATION_FALLBACK_LABEL_PATTERN.test(current)) continue;
+
+    const lines = [current];
+    for (let cursor = index + 1; cursor < Math.min(nodes.length, index + 10); cursor += 1) {
+      const next = cleanInline(nodes[cursor]);
+      if (!next) continue;
+      if (EVALUATION_FALLBACK_STOP_PATTERN.test(next) && !EVALUATION_FALLBACK_LABEL_PATTERN.test(next)) break;
+      if (EVALUATION_FALLBACK_LABEL_PATTERN.test(next)) {
+        lines.push(next);
+        continue;
+      }
+      lines.push(next);
+    }
+
+    blocks.push(lines.join(' '));
+  }
+
+  return uniq(blocks).join('\n');
+};
+
+const AFFILIATION_FALLBACK_LABEL_PATTERN = /(?:현소속|소속\s*(?:및|\/)?\s*(?:연락처|직위)?)/;
+const AFFILIATION_FALLBACK_STOP_PATTERN = /^(?:전\s*문\s*분\s*야|전문분야|학\s*력|학력|경력|주요이력|수행실적)/;
+
+const extractAffiliationFallbackBody = (nodes = []) => {
+  const candidates = [];
+
+  nodes.forEach((node, index) => {
+    const current = cleanInline(node);
+    if (AFFILIATION_FALLBACK_LABEL_PATTERN.test(current)) {
+      const joined = [];
+      for (let cursor = index + 1; cursor < Math.min(nodes.length, index + 4); cursor += 1) {
+        const next = cleanInline(nodes[cursor]);
+        if (!next || AFFILIATION_FALLBACK_STOP_PATTERN.test(next)) break;
+        joined.push(next);
+      }
+      const value = sanitizeAffiliation(joined.join(' '));
+      if (value && value !== EMPTY_VALUE) candidates.push(value);
+    }
+
+    if (EMAIL_PATTERN.test(current) || PHONE_FORMATTED_PATTERN.test(current)) {
+      const value = sanitizeAffiliation(current);
+      if (value && value !== EMPTY_VALUE) candidates.push(value);
+    }
+  });
+
+  return candidates
+    .filter((candidate) => /(?:[가-힣A-Za-z㈜]|iM|HR)/.test(candidate))
+    .sort((a, b) => b.length - a.length)[0] || '';
+};
+
 const buildHeaderPattern = (headers = []) => {
   return headers
     .map((header) => header.replace(/\s+/g, '').split('').join('\\s*'))
@@ -1693,31 +1775,47 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
       findLabeledValue(allNodes, FIELD_LABELS.career, { lookAhead: 24, validator: cleanInline })
     );
     const careerEntries = splitCareerEntries(careerBody);
+    const evaluationFallbackBody = extractEvaluationFallbackBody(allNodes);
     const evaluationBody = firstNonEmpty(
       findSectionBody(allText, FIELD_LABELS.evaluation, SECTION_STOP_HEADERS.career),
-      findLabeledValue(allNodes, FIELD_LABELS.evaluation, { lookAhead: 40, validator: cleanInline })
+      findLabeledValue(allNodes, FIELD_LABELS.evaluation, { lookAhead: 40, validator: cleanInline }),
+      evaluationFallbackBody
     );
+    const resolvedEvaluationBody = evaluationFallbackBody &&
+      (!/(?:서류|면접|심사|평가)/.test(evaluationBody) || /^(?:기타|자격|이수|수상|저서|논문)/.test(cleanInline(evaluationBody)))
+      ? evaluationFallbackBody
+      : evaluationBody;
 
+    const affiliationFallbackBody = extractAffiliationFallbackBody(allNodes);
     const affiliationBody = firstNonEmpty(
       findSectionBody(allText, FIELD_LABELS.affiliation, SECTION_STOP_HEADERS.affiliation),
-      findLabeledValue(allNodes, FIELD_LABELS.affiliation, { lookAhead: 10, validator: sanitizeAffiliation })
+      findLabeledValue(allNodes, FIELD_LABELS.affiliation, { lookAhead: 10, validator: sanitizeAffiliation }),
+      affiliationFallbackBody
     );
     row.affiliation = firstNonEmpty(
       chooseAffiliation(affiliationBody, careerBody),
+      sanitizeAffiliation(affiliationFallbackBody),
       EMPTY_VALUE
     );
     if (row.affiliation !== EMPTY_VALUE) {
       row.affiliation = sanitizeAffiliation(row.affiliation);
     }
 
-    const educationBody = firstNonEmpty(
+    const rawEducationBody = firstNonEmpty(
       findSectionBody(allText, FIELD_LABELS.education, SECTION_STOP_HEADERS.education),
       findLabeledValue(allNodes, FIELD_LABELS.education, { lookAhead: 16, validator: cleanInline })
     );
-    const educationRecords = splitEducationRecords(educationBody);
+    const nodeEducationFallbackRecords = extractEducationFallbackRecords(allNodes);
+    const educationBodyRecords = splitEducationRecords(rawEducationBody);
+    const rawEducationHasSectionTail = /(?:경력|수행실적|주요이력|자격|수상|저서|논문|강사)/.test(rawEducationBody);
+    const rawEducationHasMergedSchools = educationBodyRecords.some((record) => /(?:대학교|대학원|KAIST|POSTECH).+(?:대학교|대학원|KAIST|POSTECH)/.test(record));
+    const useNodeEducationFallback = nodeEducationFallbackRecords.length &&
+      (!educationBodyRecords.length || rawEducationHasMergedSchools || (rawEducationHasSectionTail && nodeEducationFallbackRecords.length <= educationBodyRecords.length));
+    const educationBody = useNodeEducationFallback ? nodeEducationFallbackRecords.join('\n') : rawEducationBody;
+    const educationRecords = useNodeEducationFallback ? nodeEducationFallbackRecords : splitEducationRecords(educationBody);
     const educationFallback = firstNonEmptyPreserveLines(tidyMultiline(prepareEducationSource(educationBody)), EMPTY_VALUE);
     const fallbackEducationRecords = educationFallback !== EMPTY_VALUE ? splitEducationRecords(educationFallback) : [];
-    const finalEducationRecords = fallbackEducationRecords.length && fallbackEducationRecords.length <= educationRecords.length
+    const finalEducationRecords = !useNodeEducationFallback && fallbackEducationRecords.length && fallbackEducationRecords.length <= educationRecords.length
       ? fallbackEducationRecords
       : educationRecords;
 
@@ -1740,7 +1838,7 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
     row.careerRaw = firstNonEmptyPreserveLines(tidyMultiline(sanitizeBracketArtifacts(careerBody)), EMPTY_VALUE);
     row.careerDetails = firstNonEmptyPreserveLines(tidyMultiline(formatCareerDetails(careerEntries)), EMPTY_VALUE);
     row.careerList = careerEntries;
-    row.evaluationRaw = firstNonEmptyPreserveLines(tidyMultiline(sanitizeBracketArtifacts(evaluationBody)), EMPTY_VALUE);
+    row.evaluationRaw = firstNonEmptyPreserveLines(tidyMultiline(sanitizeBracketArtifacts(resolvedEvaluationBody)), EMPTY_VALUE);
     row.career = firstNonEmptyPreserveLines(
       tidyMultiline(formatCareerSummary(careerEntries)),
       row.careerDetails,
@@ -1767,6 +1865,9 @@ export const parsePptxProfile = async (file) => {
 export const __testing = {
   chooseAffiliation,
   extractBirth,
+  extractAffiliationFallbackBody,
+  extractEducationFallbackRecords,
+  extractEvaluationFallbackBody,
   extractGender,
   extractGenderFromFileName,
   extractHighestEducation,

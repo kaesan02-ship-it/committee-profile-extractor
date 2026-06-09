@@ -190,10 +190,40 @@ const cleanupEvaluationBody = (value = '') => cleanupEntry(value)
   .replace(/^(?:외\s*)?다수[,.]?\s*/i, '')
   .replace(/(KDB\s*산업은행)산업은행/g, '$1')
   .replace(/\s*면접관\s*Profile\s*$/i, '')
+  .replace(/^\s*위원\s*>\s*/, '')
+  .replace(/\s*(?:<\s*강사\s*이력\s*>|\[\s*기타\s*\])\s*[\s\S]*$/i, '')
   .replace(/\s*(?:기타|자격|논문|주요이력|주요실적|수행실적)\s*.*$/i, '')
   .replace(/\s{2,}/g, ' ')
   .replace(/\s*[,/]+\s*$/g, '')
   .trim();
+
+const SUPPLEMENTAL_EVALUATION_LABEL_REGEX = /(?:[<[]\s*(공채\s*)?(서류전형|서류평가|서류심사|서류)\s*[>\]]|[<[]\s*(면접\s*위원|면접위원|공채\s*면접|공채면접)\s*[>\]]|(?:^|\s)(공채\s*)?(서류전형|서류평가|서류심사|공채\s*면접|공채면접)\s*[:：-]?)/g;
+
+const normalizeSupplementalEvaluationLabel = (label = '') => {
+  const normalized = cleanupEntry(label).replace(/\s+/g, '');
+  if (/서류/.test(normalized)) return '서류';
+  if (/면접/.test(normalized)) return '면접';
+  return normalized;
+};
+
+const cleanupSupplementalEvaluationBody = (value = '') => cleanupEvaluationBody(value)
+  .replace(/\s*(?:[<[]\s*(?:공채\s*)?(?:기타|강사\s*이력|대외수상\s*이력|자격|자격\s*및\s*이수|수상|저서|논문)\s*[>\]][\s\S]*)$/i, '')
+  .replace(/\s*(?:기타|강사\s*이력|대외수상\s*이력|자격\s*및\s*이수|자격|수상|저서|논문)\s*[:：-]?[\s\S]*$/i, '')
+  .replace(/^\s*위원\s*>\s*/, '')
+  .trim();
+
+const extractSupplementalEvaluationBlocks = (text = '') => {
+  const source = trimRepeatedEvaluationProjectBlock(normalizeMultiline(text).replace(/\n+/g, ' '));
+  if (source === EMPTY_VALUE) return [];
+
+  const matches = [...source.matchAll(SUPPLEMENTAL_EVALUATION_LABEL_REGEX)];
+  return matches.map((match, index) => {
+    const rawLabel = match[2] || match[3] || match[5] || match[0] || '';
+    const nextIndex = matches[index + 1]?.index ?? source.length;
+    const body = cleanupSupplementalEvaluationBody(source.slice((match.index ?? 0) + match[0].length, nextIndex));
+    return { label: normalizeSupplementalEvaluationLabel(rawLabel), body };
+  }).filter((item) => item.label && item.body);
+};
 
 const compactEvaluationList = (value = '') => {
   const cleaned = cleanupEvaluationBody(value);
@@ -248,7 +278,7 @@ export const formatEvaluationCareerForTemplate = (row = {}) => {
 
   const groups = new Map();
   sourceTexts.forEach((sourceText) => {
-    extractEvaluationBlocks(sourceText).forEach(({ label, body }) => {
+    [...extractEvaluationBlocks(sourceText), ...extractSupplementalEvaluationBlocks(sourceText)].forEach(({ label, body }) => {
       const key = label === '서류' ? '서류' : label === '면접' ? '면접' : label;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(compactEvaluationList(body));

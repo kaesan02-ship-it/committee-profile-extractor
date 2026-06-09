@@ -327,3 +327,43 @@ test('tagSuspiciousProfile flags missing fields for review', () => {
 
   assert.deepEqual(tags, ['phone_missing', 'affiliation_missing', 'education_review', 'gender_missing']);
 });
+
+test('extractEducationFallbackRecords prefers clean education-only text boxes', () => {
+  const records = __testing.extractEducationFallbackRecords([
+    '기본 인적사항 이 름 김 세 진 학 력 경력사항 및 수행실적 영남대학교 무역학과 경북대학교 경영학석사 ( 마케팅 ) KAIST 경영학석사 ( 금융공학 )',
+    '경북대학교 경영학석사 ( 마케팅 )',
+    'KAIST 경영학석사 ( 금융공학 )',
+    '대구가톨릭대학교 신학석사 ( 신학 )',
+    '영남대학교 경영학박사 ( 인사조직 )',
+  ]);
+
+  assert.deepEqual(records, [
+    '경북대학교 경영학석사 (마케팅)',
+    'KAIST 경영학석사 (금융공학)',
+    '대구가톨릭대학교 신학석사 (신학)',
+    '영남대학교 경영학박사 (인사조직)',
+  ]);
+});
+
+test('fallback extractors recover split contact and evaluation labels', () => {
+  assert.equal(
+    __testing.extractAffiliationFallbackBody([
+      '현소속 / 연락처',
+      'iM 뱅크 ( 舊 대구은행 ) 리스크검증팀 팀장 / iM 금융지주 리스크검증팀 팀장 ( 겸직 )',
+      'iM Microfinance Myanmar 비상임이사 ( 겸직 ) / dg980210@naver.com / 010-5528-5828',
+      '전 문 분 야',
+    ]),
+    'iM 뱅크 ( 舊 대구은행 ) 리스크검증팀 팀장'
+  );
+
+  assert.equal(
+    __testing.extractEvaluationFallbackBody([
+      '< 면접 위원 >',
+      '대구은행 글로벌부문 직원 선발',
+      '대구은행 해외유학생 인턴 선발',
+      '< 강사 이력 >',
+      '금융감독원 청소년 금융경제교육 강사',
+    ]),
+    '< 면접 위원 > 대구은행 글로벌부문 직원 선발 대구은행 해외유학생 인턴 선발'
+  );
+});
