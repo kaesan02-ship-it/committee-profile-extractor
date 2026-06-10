@@ -345,6 +345,15 @@ test('extractEducationFallbackRecords prefers clean education-only text boxes', 
   ]);
 });
 
+test('extractEducationFallbackRecords ignores academic system work descriptions', () => {
+  assert.deepEqual(
+    __testing.extractEducationFallbackRecords([
+      '< 개발업무 > 경주대학교 입시관리, 학사관리시스템, 인사관리시스템 및 수강 신청 등 IT 개발 업무 수행',
+    ]),
+    []
+  );
+});
+
 test('fallback extractors recover split contact and evaluation labels', () => {
   assert.equal(
     __testing.extractAffiliationFallbackBody([

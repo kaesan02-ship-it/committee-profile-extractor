@@ -60,6 +60,9 @@ const stripEvaluationSections = (value = '') => String(value ?? '')
   .trim();
 
 const CAREER_MARKER_LOOKAHEAD = /(?=(?:現|前)\s*[).:：-]?\s*|(?:현재|현|전)\s*(?:[.:：-]\s*|\s+))/g;
+const CAREER_DATE_RANGE_SOURCE = String.raw`\(?\s*\d{4}\s*(?:년|[.])?\s*(?:\d{1,2}\s*(?:월|[.])?)?(?:\s*\d{1,2}\s*(?:일|[.])?)?\s*[~∼〜-]\s*(?:\d{4}\s*(?:년|[.])?\s*(?:\d{1,2}\s*(?:월|[.])?)?(?:\s*\d{1,2}\s*(?:일|[.])?)?|현재|現|현\s*재)\s*\)?`;
+const CAREER_DATE_RANGE_REGEX = new RegExp(CAREER_DATE_RANGE_SOURCE);
+const LEADING_CAREER_DATE_RANGE_REGEX = new RegExp(`^\\s*(${CAREER_DATE_RANGE_SOURCE})\\s*(.*)$`);
 
 const isCareerHeaderOnlyLine = (line = '') => /^(?:및\s*)?(?:(?:주요실적|수행실적)\s*)?(?:경력사항|주요이력|주요경력)$/i.test(cleanupEntry(line));
 const isDateOnlyCareerFragment = (line = '') => {
@@ -80,23 +83,71 @@ const mergeCareerDateFragments = (entries = []) => {
   return merged;
 };
 
+const isCompanyOnlyCareerPrefix = (value = '') => {
+  const cleaned = cleanupEntry(value);
+  if (!cleaned || CAREER_DATE_RANGE_REGEX.test(cleaned)) return false;
+  if (cleaned.length > 28) return false;
+  return !/(?:대표|이사|부장|차장|팀장|팀원|소장|위원|컨설턴트|개발|영업|관리|평가|채용|기획|운영|지원|사업|연구|교육|홍보|PM|CEO|CIO|CISO|ADMIN|\/|–|-)/i.test(cleaned);
+};
+
+const splitRestAtNextCareer = (value = '') => {
+  const text = cleanupEntry(value);
+  const nextCompanyIndex = text.search(/\s+(?=(?:㈜|\(주\))\s*[^()]{1,40}\(?\s*\d{4})/);
+  if (nextCompanyIndex < 0) return { head: text, tail: '' };
+  return {
+    head: text.slice(0, nextCompanyIndex).trim(),
+    tail: text.slice(nextCompanyIndex).trim(),
+  };
+};
+
+const attachLeadingDateRanges = (entries = []) => {
+  const result = [];
+
+  entries.forEach((entry) => {
+    const current = cleanupEntry(entry);
+    const match = current.match(LEADING_CAREER_DATE_RANGE_REGEX);
+    const previous = result[result.length - 1];
+
+    if (match && previous && !CAREER_DATE_RANGE_REGEX.test(previous)) {
+      const [, dateRange, rest = ''] = match;
+      if (isCompanyOnlyCareerPrefix(previous)) {
+        const { head, tail } = splitRestAtNextCareer(rest);
+        result[result.length - 1] = cleanupEntry(`${previous} ${dateRange} ${head}`);
+        if (tail) result.push(tail);
+        return;
+      }
+
+      result[result.length - 1] = cleanupEntry(`${previous} ${dateRange}`);
+      if (rest.trim()) result.push(cleanupEntry(rest));
+      return;
+    }
+
+    result.push(current);
+  });
+
+  return result;
+};
+
 const splitCareerEntries = (value = '') => {
   const text = normalizeMultiline(stripEvaluationSections(value));
   if (text === EMPTY_VALUE) return [];
 
   return unique(
-    mergeCareerDateFragments(
+    attachLeadingDateRanges(mergeCareerDateFragments(
       text
+      .replace(/현\s+재/g, '현재')
       .replace(new RegExp(`\\s+${CAREER_MARKER_LOOKAHEAD.source}`, 'g'), '\n')
+      .replace(new RegExp(`\\s+(?=${CAREER_DATE_RANGE_SOURCE})`, 'g'), '\n')
       .replace(/\s+(?=\(?\s*\d{4}\s*[.]\s*\d{1,2}(?:\s*[.]\s*\d{1,2})?\s*[~∼〜-]\s*(?:\d{4}|현재|現))/g, '\n')
       .replace(/\s+(?=\(?\s*\d{4}\s*[.]\s*\d{1,2}(?:\s*[.]\s*\d{1,2})?\s*[~∼〜-]\s*\d{4})/g, '\n')
+      .replace(/\s+(?=\(?\s*\d{4}\s*년\s*[~∼〜-]\s*(?:\d{4}|현재|現))/g, '\n')
       .replace(/\s+(?=\d{4}\s*년\s*\d{1,2}\s*월\s*[~∼〜-])/g, '\n')
       .split(/\n+/)
       .map(stripEvaluationNoise)
       .filter((line) => !isCareerHeaderOnlyLine(line))
       .filter((line) => line.length >= 3)
       .filter((line) => !isEvaluationOnlyLine(line))
-    )
+    ))
   );
 };
 
@@ -118,6 +169,13 @@ const normalizeCareerLine = (line = '', fallbackPrefix = '前') => {
   return `${fallbackPrefix}) ${cleaned}`;
 };
 
+const isCareerSummaryNoiseLine = (line = '') => {
+  const cleaned = cleanupEntry(line);
+  if (/^\(?\s*(?:수행실적|주요실적|평가이력|채용심사\s*위원\s*활동)\s*\)?(?:\s*[-–].*)?$/i.test(cleaned)) return true;
+  if (!CAREER_DATE_RANGE_REGEX.test(cleaned) && /^[-–]\s*/.test(cleaned)) return true;
+  return false;
+};
+
 const isEvaluationOnlyLine = (line = '') => {
   if (/^\[?\s*(서류|면접|채용면접|서류평가|면접전형|심사|자문)\s*\]?[:：]/.test(line)) return true;
   if (/^(?:면접관\s*)?경력\s*(?:서류|면접)\s*[:：]/.test(line)) return true;
@@ -135,7 +193,7 @@ export const formatCareerForTemplate = (row = {}) => {
   const careerLines = splitCareerEntries(source);
   const lines = [];
   const currentLine = careerLines.find((line) => hasCurrentMarker(line));
-  const previousLines = careerLines.filter((line) => line !== currentLine);
+  const previousLines = careerLines.filter((line) => line !== currentLine && !isCareerSummaryNoiseLine(line));
 
   if (currentLine) {
     lines.push(normalizeCareerLine(currentLine, '現'));
@@ -191,22 +249,27 @@ const cleanupEvaluationBody = (value = '') => cleanupEntry(value)
   .replace(/(KDB\s*산업은행)산업은행/g, '$1')
   .replace(/\s*면접관\s*Profile\s*$/i, '')
   .replace(/^\s*위원\s*>\s*/, '')
-  .replace(/\s*(?:<\s*강사\s*이력\s*>|\[\s*기타\s*\])\s*[\s\S]*$/i, '')
-  .replace(/\s*(?:기타|자격|논문|주요이력|주요실적|수행실적)\s*.*$/i, '')
+  .replace(/\s*\[\s*(?:서류|서류평가|서류전형|면접|면접평가|면접전형|자문|자문위원|심사|심사위원|평가\s*\/\s*면접)\s*\]\s*[\s\S]*$/i, '')
+  .replace(/\s*(?:<\s*(?:심사\s*위원|심사위원|자문\s*위원|자문위원|강사\s*이력|개발업무|시스템운영|국제업무|ICT\s*프로젝트|프로젝트)\s*>|\[\s*(?:기타|교육\s*및\s*강의|ICT\s*프로젝트|프로젝트)\s*\])\s*[\s\S]*$/i, '')
+  .replace(/\s*(?:기타|자격|논문|저서|교육\s*및\s*강의|HR\s*관련|주요이력|주요실적|수행실적|경력사항\s*및|프로젝트|PM|정책연구서)\s*.*$/i, '')
+  .replace(/\s*(?:지자체|공공도서관|정부기관)\s*[\s\S]*$/i, '')
   .replace(/\s{2,}/g, ' ')
   .replace(/\s*[,/]+\s*$/g, '')
   .trim();
 
-const SUPPLEMENTAL_EVALUATION_LABEL_REGEX = /(?:[<[]\s*(공채\s*)?(서류전형|서류평가|서류심사|서류)\s*[>\]]|[<[]\s*(면접\s*위원|면접위원|공채\s*면접|공채면접)\s*[>\]]|(?:^|\s)(공채\s*)?(서류전형|서류평가|서류심사|공채\s*면접|공채면접)\s*[:：-]?)/g;
+const SUPPLEMENTAL_EVALUATION_LABEL_REGEX = /(?:[<[]\s*(공채\s*)?(서류전형|서류평가|서류심사|서류)\s*[>\]]|[<[]\s*(면접\s*위원|면접위원|채용\s+면접|공채\s*면접|공채면접)\s*[>\]]|[<[]\s*(심사\s*위원|심사위원)\s*[>\]]|(?:^|\s)(공채\s*)?(서류전형|서류평가|서류심사|공채\s*면접|공채면접|면접\s*위원|면접위원)\s*[:：-]?)/g;
+const SUPPLEMENTAL_LABEL_IN_BODY_PATTERN = /[<[]\s*(?:채용\s+면접|면접\s*위원|면접위원|공채\s*면접|공채면접|공채\s*서류전형|공채\s*서류평가|공채\s*서류심사)\s*[>\]]/;
 
 const normalizeSupplementalEvaluationLabel = (label = '') => {
   const normalized = cleanupEntry(label).replace(/\s+/g, '');
   if (/서류/.test(normalized)) return '서류';
   if (/면접/.test(normalized)) return '면접';
+  if (/심사/.test(normalized)) return '심사';
   return normalized;
 };
 
 const cleanupSupplementalEvaluationBody = (value = '') => cleanupEvaluationBody(value)
+  .replace(/\s*(?:[<[]\s*(?:자문위원|자문|심의위원|심사|채용심사|기업컨설팅|컨설팅)\s*[>\]][\s\S]*)$/i, '')
   .replace(/\s*(?:[<[]\s*(?:공채\s*)?(?:기타|강사\s*이력|대외수상\s*이력|자격|자격\s*및\s*이수|수상|저서|논문)\s*[>\]][\s\S]*)$/i, '')
   .replace(/\s*(?:기타|강사\s*이력|대외수상\s*이력|자격\s*및\s*이수|자격|수상|저서|논문)\s*[:：-]?[\s\S]*$/i, '')
   .replace(/^\s*위원\s*>\s*/, '')
@@ -218,7 +281,7 @@ const extractSupplementalEvaluationBlocks = (text = '') => {
 
   const matches = [...source.matchAll(SUPPLEMENTAL_EVALUATION_LABEL_REGEX)];
   return matches.map((match, index) => {
-    const rawLabel = match[2] || match[3] || match[5] || match[0] || '';
+    const rawLabel = match[2] || match[3] || match[4] || match[6] || match[0] || '';
     const nextIndex = matches[index + 1]?.index ?? source.length;
     const body = cleanupSupplementalEvaluationBody(source.slice((match.index ?? 0) + match[0].length, nextIndex));
     return { label: normalizeSupplementalEvaluationLabel(rawLabel), body };
@@ -229,10 +292,10 @@ const compactEvaluationList = (value = '') => {
   const cleaned = cleanupEvaluationBody(value);
   if (!cleaned) return '';
 
-  const items = cleaned
+  const items = unique(cleaned
     .split(/\s*,\s*/)
     .map((item) => item.trim())
-    .filter(Boolean);
+    .filter(Boolean));
 
   if (items.length >= 5) return `${items.slice(0, 4).join(', ')} 등`;
   if (cleaned.length <= 180) return cleaned;
@@ -268,17 +331,19 @@ const extractGenericEvaluationActivities = (texts = []) => {
 };
 
 export const formatEvaluationCareerForTemplate = (row = {}) => {
-  const sourceTexts = unique([
-    row.evaluationRaw,
-    row.careerRaw,
-    row.careerDetails,
-    row.career,
-  ].map((value) => String(value ?? '')).filter((value) => !isEmptyValue(value)));
+  const hasEvaluationRaw = !isEmptyValue(row.evaluationRaw);
+  const sourceTexts = unique((hasEvaluationRaw
+    ? [row.evaluationRaw]
+    : [row.careerRaw, row.careerDetails, row.career]
+  ).map((value) => String(value ?? '')).filter((value) => !isEmptyValue(value)));
   if (!sourceTexts.length) return '[미기재] 평가이력 별도 기재 없음';
 
   const groups = new Map();
   sourceTexts.forEach((sourceText) => {
-    [...extractEvaluationBlocks(sourceText), ...extractSupplementalEvaluationBlocks(sourceText)].forEach(({ label, body }) => {
+    const supplementalBlocks = extractSupplementalEvaluationBlocks(sourceText);
+    const primaryBlocks = extractEvaluationBlocks(sourceText)
+      .filter(({ body }) => !(supplementalBlocks.length && SUPPLEMENTAL_LABEL_IN_BODY_PATTERN.test(body)));
+    [...primaryBlocks, ...supplementalBlocks].forEach(({ label, body }) => {
       const key = label === '서류' ? '서류' : label === '면접' ? '면접' : label;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key).push(compactEvaluationList(body));

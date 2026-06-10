@@ -5,6 +5,66 @@ import {
   formatEvaluationCareerForTemplate,
 } from '../src/lib/profileExcelFormatter.js';
 
+test('formatCareerForTemplate splits spaced current date markers', () => {
+  const formatted = formatCareerForTemplate({
+    careerDetails: '2021. 10~2022. 03 대신정보통신 부장. 한국교통안전공단 국가자격시스템 개발 / 운영 2024. 01~현 재 SMT 정보기술 부장. 한국교육학술정보원 위탁운영팀 시스템 ADMIN',
+  });
+
+  assert.equal(formatted, [
+    '現) 2024. 01~현재 SMT 정보기술 부장. 한국교육학술정보원 위탁운영팀 시스템 ADMIN',
+    '前) 2021. 10~2022. 03 대신정보통신 부장. 한국교통안전공단 국가자격시스템 개발 / 운영',
+  ].join('\n'));
+});
+
+test('formatCareerForTemplate keeps trailing date ranges with their career entry', () => {
+  assert.equal(
+    formatCareerForTemplate({
+      careerDetails: '㈜ 앨리오소프트 이사 – 사업관리, 기술영업, 공기업 면접관 및 서류평가 (2023. 08~현재) 마이크로스트레티지 코리아 (주) 이사 – 채용, 조직관리, BI 컨설팅, 세일즈컨설팅, 솔루션 영업 (2003. 06~2023. 07) 시너지 C&C 차장 – SAP 컨설턴트 (BW, CRM)(2002. 01~2003. 05)',
+    }),
+    [
+      '現) ㈜ 앨리오소프트 이사 – 사업관리, 기술영업, 공기업 면접관 및 서류평가 (2023. 08~현재)',
+      '前) 마이크로스트레티지 코리아 (주) 이사 – 채용, 조직관리, BI 컨설팅, 세일즈컨설팅, 솔루션 영업 (2003. 06~2023. 07)',
+      '前) 시너지 C&C 차장 – SAP 컨설턴트 (BW, CRM)(2002. 01~2003. 05)',
+    ].join('\n')
+  );
+});
+
+test('formatCareerForTemplate keeps leading date ranges attached to following jobs', () => {
+  assert.equal(
+    formatCareerForTemplate({
+      careerDetails: '(1996. 05~2000. 02) 신용보증기금 정보시스템부 팀원 (신용보증시스템 개발) (2000. 02~2004. 02) 신용보증기금 신용정보부 팀원 (신용정보 CRETOP 시스템 기획 및 개발) (2023. 07~현재) 신용보증기금 광화문지점 부지점장',
+    }),
+    [
+      '現) (2023. 07~현재) 신용보증기금 광화문지점 부지점장',
+      '前) (1996. 05~2000. 02) 신용보증기금 정보시스템부 팀원 (신용보증시스템 개발)',
+      '前) (2000. 02~2004. 02) 신용보증기금 신용정보부 팀원 (신용정보 CRETOP 시스템 기획 및 개발)',
+    ].join('\n')
+  );
+});
+
+test('formatCareerForTemplate handles colon date ranges and ignores activity-only fragments', () => {
+  assert.equal(
+    formatCareerForTemplate({
+      careerDetails: '밸류업컨설팅 (채용평가, 직무교육, 컨설팅, NCS 개발 및 검수): 2013. 07.~현재 한국전문면접평가인증원 사업본부 이사: 2022. 09.~현재 경신 설계팀, 한국오므론전장 연구팀, LS 오토모티브 선행연구팀: 2003. 02.~2013. 04.',
+    }),
+    [
+      '現) 밸류업컨설팅 (채용평가, 직무교육, 컨설팅, NCS 개발 및 검수): 2013. 07.~현재',
+      '現) 한국전문면접평가인증원 사업본부 이사: 2022. 09.~현재',
+      '前) 경신 설계팀, 한국오므론전장 연구팀, LS 오토모티브 선행연구팀: 2003. 02.~2013. 04.',
+    ].join('\n')
+  );
+
+  assert.equal(
+    formatCareerForTemplate({
+      careerDetails: '現 블라썸 컨설팅 / 대표 (2015. 1~현재) (수행실적) - KOICA 선발심사위원 前 앨앤아이컨설팅 ㈜ HR 컨설팅 / 이사 (2008. 5~2014. 12)',
+    }),
+    [
+      '現) 블라썸 컨설팅 / 대표 (2015. 1~현재)',
+      '前) 앨앤아이컨설팅 ㈜ HR 컨설팅 / 이사 (2008. 5~2014. 12)',
+    ].join('\n')
+  );
+});
+
 test('formatCareerForTemplate splits inline current and previous career entries', () => {
   const formatted = formatCareerForTemplate({
     affiliation: '세명대학교 보건안전학과 교수',
@@ -252,6 +312,53 @@ test('formatEvaluationCareerForTemplate handles public recruitment and panel lab
   );
 });
 
+test('formatEvaluationCareerForTemplate separates spaced hiring interview labels', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '< 서류 > 기업은행, 한국관세정보원 < 채용 면접 > 한국발명진흥회, 한국과학창의재단 < 자문위원 > 한국소방산업기술원',
+  });
+
+  assert.equal(formatted, [
+    '[서류] 기업은행, 한국관세정보원',
+    '[면접] 한국발명진흥회, 한국과학창의재단',
+    '[자문] 한국소방산업기술원',
+  ].join('\n'));
+});
+
+test('formatEvaluationCareerForTemplate cuts non-evaluation tails', () => {
+  assert.equal(
+    formatEvaluationCareerForTemplate({
+      evaluationRaw: '면접위원: 근로복지공단, 한국원자력환경공단 HR 관련: 기업은행, 서민금융진흥원',
+    }),
+    '[면접] 근로복지공단, 한국원자력환경공단'
+  );
+
+  assert.equal(
+    formatEvaluationCareerForTemplate({
+      evaluationRaw: '[서류] 표준협회, 충북해양과학관 [면접] KB 국민은행, 산업은행',
+    }),
+    '[서류] 표준협회, 충북해양과학관\n[면접] KB 국민은행, 산업은행'
+  );
+
+  assert.equal(
+    formatEvaluationCareerForTemplate({
+      evaluationRaw: '< 채용면접 > 신용보증기금 < 심사위원 > 중소상공인희망재단',
+    }),
+    '[면접] 신용보증기금\n[심사] 중소상공인희망재단'
+  );
+});
+
+test('formatEvaluationCareerForTemplate does not mix career text when evaluationRaw exists', () => {
+  const formatted = formatEvaluationCareerForTemplate({
+    evaluationRaw: '면접: IBK 기업은행, 산업은행 서류: 국민카드, 코스콤',
+    careerRaw: '㈜ 앨리오소프트 이사 – 공기업 면접관 및 서류평가 (2023.08~ 현재)',
+  });
+
+  assert.equal(formatted, [
+    '[서류] 국민카드, 코스콤',
+    '[면접] IBK 기업은행, 산업은행',
+  ].join('\n'));
+});
+
 test('formatCareerForTemplate excludes explicit evaluation blocks from career summary', () => {
   const formatted = formatCareerForTemplate({
     affiliation: 'HR 임팩트 대표',
@@ -259,6 +366,9 @@ test('formatCareerForTemplate excludes explicit evaluation blocks from career su
   });
 
   assert.equal(formatted, [
-    '現) HR 임팩트 대표: (2024~현재) ㈜ 임팩트그룹코리아 이사: 조직개발센터 (2024~현재) ㈜선연그룹 이사: 컨설팅 사업본부 (2021~2024) ㈜ 에스티유니타스 전략기획팀장: 전략 및 신사업 기획 (2015~2017)',
+    '現) HR 임팩트 대표: (2024~현재)',
+    '現) ㈜ 임팩트그룹코리아 이사: 조직개발센터 (2024~현재)',
+    '前) ㈜선연그룹 이사: 컨설팅 사업본부 (2021~2024)',
+    '前) ㈜ 에스티유니타스 전략기획팀장: 전략 및 신사업 기획 (2015~2017)',
   ].join('\n'));
 });

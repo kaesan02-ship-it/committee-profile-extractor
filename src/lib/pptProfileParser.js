@@ -1520,7 +1520,7 @@ const findLabeledValue = (nodes, labels, options = {}) => {
 };
 
 const EDUCATION_FALLBACK_SCHOOL_PATTERN = /(?:대학교|대학원|대학|University|College|KAIST|POSTECH|주립대)/i;
-const EDUCATION_FALLBACK_DEGREE_PATTERN = /(?:박사|석사|학사|학위|졸업|수료|전공|학과|Ph\.?\s*D|MBA|M\.?\s*[AS]|B\.?\s*[AS])/i;
+const EDUCATION_FALLBACK_DEGREE_PATTERN = /(?:박사|석사|학사(?!관리)|학위|졸업|수료|전공|학과|Ph\.?\s*D|MBA|M\.?\s*[AS]|B\.?\s*[AS])/i;
 const EDUCATION_FALLBACK_SECTION_NOISE_PATTERN = /(?:자격|이수|수상|표창|논문|저서|강사|면접|서류|심사|평가|경력|수행실적|주요이력)/;
 
 const extractEducationFallbackRecords = (nodes = []) => {
@@ -1808,9 +1808,10 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
     const nodeEducationFallbackRecords = extractEducationFallbackRecords(allNodes);
     const educationBodyRecords = splitEducationRecords(rawEducationBody);
     const rawEducationHasSectionTail = /(?:경력|수행실적|주요이력|자격|수상|저서|논문|강사)/.test(rawEducationBody);
+    const rawEducationHasSchool = EDUCATION_FALLBACK_SCHOOL_PATTERN.test(rawEducationBody);
     const rawEducationHasMergedSchools = educationBodyRecords.some((record) => /(?:대학교|대학원|KAIST|POSTECH).+(?:대학교|대학원|KAIST|POSTECH)/.test(record));
     const useNodeEducationFallback = nodeEducationFallbackRecords.length &&
-      (!educationBodyRecords.length || rawEducationHasMergedSchools || (rawEducationHasSectionTail && nodeEducationFallbackRecords.length <= educationBodyRecords.length));
+      ((!educationBodyRecords.length && !rawEducationHasSchool) || rawEducationHasMergedSchools || (rawEducationHasSectionTail && nodeEducationFallbackRecords.length <= educationBodyRecords.length));
     const educationBody = useNodeEducationFallback ? nodeEducationFallbackRecords.join('\n') : rawEducationBody;
     const educationRecords = useNodeEducationFallback ? nodeEducationFallbackRecords : splitEducationRecords(educationBody);
     const educationFallback = firstNonEmptyPreserveLines(tidyMultiline(prepareEducationSource(educationBody)), EMPTY_VALUE);
