@@ -305,7 +305,7 @@ const isValidBirthParts = (year, month, day) => {
   const currentYear = new Date().getFullYear();
 
   if (!Number.isInteger(y) || !Number.isInteger(m) || !Number.isInteger(d)) return false;
-  if (y < 1900 || y > currentYear) return false;
+  if (y < 1900 || y > currentYear - 18) return false;
   if (m < 1 || m > 12 || d < 1 || d > 31) return false;
 
   const date = new Date(y, m - 1, d);
@@ -1674,6 +1674,42 @@ const isWeakEducation = (row = {}) => {
   return false;
 };
 
+const FORMAT_ANOMALY_TAG = '양식 이상';
+
+const isProfileFormatAnomaly = (row = {}) => {
+  const riskText = [
+    row.affiliation,
+    row.educationRaw,
+    row.educationDetails,
+    row.expertise,
+    row.careerRaw,
+    row.careerDetails,
+  ].map((value) => String(value ?? '')).join(' ');
+
+  return riskText.length > 1200 &&
+    /심사위원\s*프로필\s*인적사항/.test(riskText) &&
+    /생\s*년\s*월\s*일/.test(riskText) &&
+    /성\s*명/.test(riskText);
+};
+
+const applyFormatAnomalyGuard = (row = {}) => {
+  row.formatAnomaly = true;
+  row.birth = EMPTY_VALUE;
+  row.age = EMPTY_VALUE;
+  row.affiliation = EMPTY_VALUE;
+  row.education = EMPTY_VALUE;
+  row.educationRaw = EMPTY_VALUE;
+  row.educationDetails = EMPTY_VALUE;
+  row.educationList = [];
+  row.expertise = EMPTY_VALUE;
+  row.career = EMPTY_VALUE;
+  row.careerRaw = EMPTY_VALUE;
+  row.careerDetails = EMPTY_VALUE;
+  row.careerList = [];
+  row.evaluationRaw = EMPTY_VALUE;
+  return row;
+};
+
 export const tagSuspiciousProfile = (row = {}) => {
   const tags = [];
 
@@ -1845,8 +1881,13 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
       row.careerDetails,
       EMPTY_VALUE
     );
+    const formatAnomaly = isProfileFormatAnomaly(row);
+    if (formatAnomaly) applyFormatAnomalyGuard(row);
+
     row.age = row.birth !== EMPTY_VALUE ? calcAge(row.birth) : EMPTY_VALUE;
-    row.reviewTags = tagSuspiciousProfile(row);
+    row.reviewTags = formatAnomaly
+      ? uniq([FORMAT_ANOMALY_TAG, ...tagSuspiciousProfile(row)])
+      : tagSuspiciousProfile(row);
 
     return row;
   } catch {
@@ -1877,6 +1918,7 @@ export const __testing = {
   findSectionBody,
   getEducationSourceLines,
   getSourceLineEducationRecords,
+  isProfileFormatAnomaly,
   sanitizeAffiliation,
   splitEducationRecords,
   tagSuspiciousProfile,

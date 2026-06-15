@@ -315,6 +315,21 @@ test('extractBirth supports comma-separated birth dates', () => {
   assert.equal(__testing.extractBirth('생 년 월 일 1979,11.30'), '1979.11.30');
 });
 
+test('extractBirth rejects recent career dates as birth dates', () => {
+  const recentYear = new Date().getFullYear() - 6;
+  assert.equal(__testing.extractBirth(`現 유정노동법률사무소 대표노무사 (${recentYear}. 07. 01)`), '');
+  assert.equal(__testing.extractBirth('생 년 월 일 1972.05.19'), '1972.05.19');
+});
+
+test('isProfileFormatAnomaly flags embedded profile headers in long career text', () => {
+  assert.equal(
+    __testing.isProfileFormatAnomaly({
+      careerRaw: `${'대표경력 '.repeat(320)} 심사위원 프로필 인적사항 1972. 05. 19 생 년 월 일 중앙대학교 / 교수 연락처 010-7221-6869 성 명`,
+    }),
+    true
+  );
+});
+
 test('tagSuspiciousProfile flags missing fields for review', () => {
   const tags = tagSuspiciousProfile({
     phone: EMPTY_VALUE,
