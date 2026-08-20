@@ -1686,6 +1686,27 @@ const FIXED_LAYOUT_EDUCATION_LABELS = ['학사', '석사', '박사'];
 const FIXED_LAYOUT_EDUCATION_PLACEHOLDERS = new Map([[30, 0], [31, 1], [32, 2]]);
 const FIXED_LAYOUT_EDUCATION_NOISE_PATTERN = /(?:경력|수행실적|주요이력|자격|수상|저서|논문|강사|면접|서류|심사|평가)/;
 const FIXED_LAYOUT_EDUCATION_INSTITUTION_PATTERN = /(?:대학교|대학원|대학|University|College|KAIST|POSTECH|학점은행제|평생교육진흥원)/i;
+const FIXED_LAYOUT_CAREER_PLACEHOLDER = 20;
+const FIXED_LAYOUT_DOCUMENT_PLACEHOLDER = 21;
+const FIXED_LAYOUT_INTERVIEW_PLACEHOLDER = 23;
+
+const getFixedLayoutSlotRecord = (shapeRecords, placeholderIndex, minY, maxY) => {
+  const placeholderRecord = shapeRecords.find((record) => record.placeholderIndex === placeholderIndex);
+  if (placeholderRecord?.text.trim()) return { ...placeholderRecord, present: true };
+
+  const positionedRecord = shapeRecords.find((record) =>
+    record.index !== placeholderRecord?.index && record.text.trim() &&
+    Number.isFinite(record.x) && record.x < 2500000 &&
+    Number.isFinite(record.y) && record.y >= minY && record.y <= maxY
+  );
+  if (positionedRecord) return { ...positionedRecord, present: true };
+
+  return {
+    index: placeholderRecord?.index ?? -1,
+    text: '',
+    present: Boolean(placeholderRecord),
+  };
+};
 
 const getFixedLayoutEducationSlot = (record = {}, index, phoneIndex) => {
   if (FIXED_LAYOUT_EDUCATION_PLACEHOLDERS.has(record.placeholderIndex)) {
@@ -1741,9 +1762,9 @@ const extractFixedLayoutBirth = (text = '') => {
 };
 
 const getFixedLayoutProfile = (shapeInputs = []) => {
-  const shapeRecords = shapeInputs.map((input) => typeof input === 'string'
-    ? { text: input, placeholderIndex: null, x: null, y: null }
-    : { text: input?.text || '', placeholderIndex: input?.placeholderIndex ?? null, x: input?.x ?? null, y: input?.y ?? null });
+  const shapeRecords = shapeInputs.map((input, index) => typeof input === 'string'
+    ? { index, text: input, placeholderIndex: null, x: null, y: null }
+    : { index, text: input?.text || '', placeholderIndex: input?.placeholderIndex ?? null, x: input?.x ?? null, y: input?.y ?? null });
   const blocks = shapeRecords.map(({ text }) => String(text ?? '').trim());
   if (blocks.filter(Boolean).length < 8 || blocks.some((text) => FIXED_LAYOUT_HEADER_PATTERN.test(text))) return null;
 
@@ -1762,10 +1783,18 @@ const getFixedLayoutProfile = (shapeInputs = []) => {
     extractEmail(expertise) || extractPhone(expertise)
   ) return null;
 
-  let careerIndexes = blocks
-    .map((text, index) => ({ text, index }))
-    .filter(({ text }) => FIXED_LAYOUT_CAREER_PATTERN.test(text) && /\d{4}/.test(text));
-  if (!careerIndexes.length) {
+  const careerSlot = getFixedLayoutSlotRecord(shapeRecords, FIXED_LAYOUT_CAREER_PLACEHOLDER, 2500000, 3350000);
+  const documentSlot = getFixedLayoutSlotRecord(shapeRecords, FIXED_LAYOUT_DOCUMENT_PLACEHOLDER, 3350001, 4050000);
+  const interviewSlot = getFixedLayoutSlotRecord(shapeRecords, FIXED_LAYOUT_INTERVIEW_PLACEHOLDER, 4050001, 4700000);
+  const hasFixedEvaluationSlots = documentSlot.present || interviewSlot.present;
+
+  let careerIndexes = careerSlot.text ? [{ text: careerSlot.text, index: careerSlot.index }] : [];
+  if (!careerSlot.present) {
+    careerIndexes = blocks
+      .map((text, index) => ({ text, index }))
+      .filter(({ text }) => FIXED_LAYOUT_CAREER_PATTERN.test(text) && /\d{4}/.test(text));
+  }
+  if (!careerSlot.present && !careerIndexes.length) {
     careerIndexes = blocks
       .map((text, index) => ({ text, index }))
       .filter(({ text, index }) => index > 0 && index < affiliationIndex && text.length >= 40 &&
@@ -1782,6 +1811,8 @@ const getFixedLayoutProfile = (shapeInputs = []) => {
     birthIndex,
     emailIndex,
     phoneIndex,
+    ...(documentSlot.index >= 0 ? [documentSlot.index] : []),
+    ...(interviewSlot.index >= 0 ? [interviewSlot.index] : []),
     ...careerIndexes.map(({ index }) => index),
   ]);
 
@@ -1821,25 +1852,30 @@ const getFixedLayoutProfile = (shapeInputs = []) => {
     .filter(({ index }) => index < affiliationIndex && !excludedIndexes.has(index));
   const qualificationPosition = assessmentBlocks.findIndex(({ text }) => FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text));
   const isMixedEvaluationBlock = (text) => /서류/.test(text) && /면접/.test(text);
-  let documentScreening = assessmentBlocks.find(({ text }) =>
-    !FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text) && !isMixedEvaluationBlock(text) &&
-    /서류\s*(?:평가|심사|전형)/.test(text))?.text || '';
-  let interviewScreening = assessmentBlocks.find(({ text }) =>
-    !FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text) && !isMixedEvaluationBlock(text) &&
-    /면접\s*(?:평가|심사|전형)/.test(text))?.text || '';
+  let documentScreening = tidyMultiline(documentSlot.text);
+  let interviewScreening = tidyMultiline(interviewSlot.text);
+
+  if (!hasFixedEvaluationSlots) {
+    documentScreening = assessmentBlocks.find(({ text }) =>
+      !FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text) && !isMixedEvaluationBlock(text) &&
+      /서류\s*(?:평가|심사|전형)/.test(text))?.text || '';
+    interviewScreening = assessmentBlocks.find(({ text }) =>
+      !FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text) && !isMixedEvaluationBlock(text) &&
+      /면접\s*(?:평가|심사|전형)/.test(text))?.text || '';
+  }
 
   if (documentScreening && documentScreening === interviewScreening) {
     documentScreening = '';
     interviewScreening = '';
   }
 
-  if (qualificationPosition > 0) {
+  if (!hasFixedEvaluationSlots && qualificationPosition > 0) {
     documentScreening ||= assessmentBlocks[qualificationPosition - 1]?.text || '';
     interviewScreening ||= assessmentBlocks.slice(qualificationPosition + 1)
       .find(({ text }) => !FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text))?.text || '';
   }
 
-  if (!documentScreening && !interviewScreening) {
+  if (!hasFixedEvaluationSlots && !documentScreening && !interviewScreening) {
     const organizationLists = blocks
       .map((text, index) => ({ text: cleanInline(text), index }))
       .filter(({ text, index }) => !excludedIndexes.has(index) && !FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text) &&

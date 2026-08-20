@@ -481,6 +481,69 @@ test('getFixedLayoutProfile flags source text that conflicts with its fixed degr
   assert.deepEqual(profile.educationList, ['[학사] 인지대학교 영어영문학 석사']);
 });
 
+test('getFixedLayoutProfile reads career and evaluation from fixed template slots', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    { text: '심영재' },
+    { text: '㈜케이티피씨 대표 (2020~현재)\nUPIN&CO CFO (2019~2023)', placeholderIndex: 20 },
+    { text: '금융감독원, KDB산업은행', placeholderIndex: 21 },
+    { text: '정보관리기술사 취득', placeholderIndex: 22 },
+    { text: '한국증권금융, KB국민은행', placeholderIndex: 23 },
+    { text: '강의 및 자문 활동', placeholderIndex: 24 },
+    { text: '주식회사 케이티피씨', placeholderIndex: 25 },
+    { text: '인사, 재무', placeholderIndex: 26 },
+    { text: '1973년 12월 4일', placeholderIndex: 27 },
+    { text: 'person@example.com', placeholderIndex: 28 },
+    { text: '010-1234-5678', placeholderIndex: 29 },
+    { text: '경동대학교 경영정보학과', placeholderIndex: 30 },
+  ]);
+
+  assert.match(profile.careerBlock, /케이티피씨 대표/);
+  assert.equal(profile.evaluationRaw, '[서류] 금융감독원, KDB산업은행\n[면접] 한국증권금융, KB국민은행');
+});
+
+test('getFixedLayoutProfile does not replace fixed evaluation slots with other achievements', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    { text: '박은미' },
+    { text: '現) 세움 컨설팅 이사 (2025년~현재)', placeholderIndex: 20 },
+    { text: '정보통신기획평가원, 국민건강보험공단', placeholderIndex: 21 },
+    { text: '전문면접관 교육 이수', placeholderIndex: 22 },
+    { text: '한국해양수산연수원, 국립해양생물자원관', placeholderIndex: 23 },
+    { text: '서울대학교, 연세대학교 공공연구 평가 활동', placeholderIndex: 24 },
+    { text: '세움 컨설팅 이사', placeholderIndex: 25 },
+    { text: '기술, 연구', placeholderIndex: 26 },
+    { text: '1975년 1월 1일', placeholderIndex: 27 },
+    { text: 'person@example.com', placeholderIndex: 28 },
+    { text: '010-1234-5678', placeholderIndex: 29 },
+    { text: '한국대학교 행정학과', placeholderIndex: 30 },
+  ]);
+
+  assert.equal(
+    profile.evaluationRaw,
+    '[서류] 정보통신기획평가원, 국민건강보험공단\n[면접] 한국해양수산연수원, 국립해양생물자원관'
+  );
+  assert.doesNotMatch(profile.evaluationRaw, /서울대학교/);
+});
+
+test('getFixedLayoutProfile reads manually positioned replacements for empty evaluation slots', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    { text: '장호진' },
+    { text: '現) 키움과 채움 이사 (2025년~현재)', placeholderIndex: 20 },
+    { text: '기업은행, 한국교통안전공단', placeholderIndex: 21 },
+    { text: '전문면접관 교육 이수', placeholderIndex: 22 },
+    { text: '', placeholderIndex: 23 },
+    { text: '기타 수행실적', placeholderIndex: 24 },
+    { text: '키움과 채움 이사', placeholderIndex: 25 },
+    { text: '인사, 행정', placeholderIndex: 26 },
+    { text: '1975년 1월 26일', placeholderIndex: 27 },
+    { text: 'person@example.com', placeholderIndex: 28 },
+    { text: '010-1234-5678', placeholderIndex: 29 },
+    { text: '우석대학교 국어국문학과', placeholderIndex: 30 },
+    { text: '농협은행, 국민은행, 한국산업은행', x: 1321402, y: 4216268 },
+  ]);
+
+  assert.equal(profile.evaluationRaw, '[서류] 기업은행, 한국교통안전공단\n[면접] 농협은행, 국민은행, 한국산업은행');
+});
+
 test('getFixedLayoutProfile does not activate on labeled legacy layouts', () => {
   assert.equal(__testing.getFixedLayoutProfile([
     '기본 인적사항',
