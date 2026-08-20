@@ -1630,6 +1630,7 @@ const extractNodesAndText = async (zip) => {
 
   const allNodes = [];
   const shapeTexts = [];
+  const shapeRecords = [];
   let allText = '';
 
   for (const path of slidePaths) {
@@ -1646,7 +1647,16 @@ const extractNodesAndText = async (zip) => {
           return decodeHTML(runs.map((item) => item.replace(/<\/?a:t>/g, '')).join('')).trim();
         })
         .filter(Boolean);
-      shapeTexts.push(shapeParagraphs.join('\n').trim());
+      const text = shapeParagraphs.join('\n').trim();
+      const placeholderMatch = shape.match(/<p:ph\b[^>]*\bidx="(\d+)"/);
+      const offsetMatch = shape.match(/<a:off\b[^>]*\bx="(\d+)"[^>]*\by="(\d+)"/);
+      shapeTexts.push(text);
+      shapeRecords.push({
+        text,
+        placeholderIndex: placeholderMatch ? Number(placeholderMatch[1]) : null,
+        x: offsetMatch ? Number(offsetMatch[1]) : null,
+        y: offsetMatch ? Number(offsetMatch[2]) : null,
+      });
     }
     const paragraphs = xml.split(/<a:p>/);
 
@@ -1665,13 +1675,54 @@ const extractNodesAndText = async (zip) => {
     }
   }
 
-  return { allNodes, allText, shapeTexts };
+  return { allNodes, allText, shapeTexts, shapeRecords };
 };
 
 const FIXED_LAYOUT_HEADER_PATTERN = /(?:기본\s*인적사항|소속\s*및\s*연락처|전문\s*분야|경력사항\s*및|주요\s*실적)/;
 const FIXED_LAYOUT_BIRTH_PATTERN = /^\s*(\d{2}|(?:19|20)\d{2})\s*(?:년|[./-])\s*(\d{1,2})\s*(?:월|[./-])\s*(\d{1,2})\s*일?\.?\s*$/;
 const FIXED_LAYOUT_QUALIFICATION_PATTERN = /(?:자격|교육\s*이수|과정\s*이수|논문|저서|학위|박사|석사|학사)/;
 const FIXED_LAYOUT_CAREER_PATTERN = /(?:^|\s)(?:現|前|현|전)\s*[).:：]/;
+const FIXED_LAYOUT_EDUCATION_LABELS = ['학사', '석사', '박사'];
+const FIXED_LAYOUT_EDUCATION_PLACEHOLDERS = new Map([[30, 0], [31, 1], [32, 2]]);
+const FIXED_LAYOUT_EDUCATION_NOISE_PATTERN = /(?:경력|수행실적|주요이력|자격|수상|저서|논문|강사|면접|서류|심사|평가)/;
+const FIXED_LAYOUT_EDUCATION_INSTITUTION_PATTERN = /(?:대학교|대학원|대학|University|College|KAIST|POSTECH|학점은행제|평생교육진흥원)/i;
+
+const getFixedLayoutEducationSlot = (record = {}, index, phoneIndex) => {
+  if (FIXED_LAYOUT_EDUCATION_PLACEHOLDERS.has(record.placeholderIndex)) {
+    return FIXED_LAYOUT_EDUCATION_PLACEHOLDERS.get(record.placeholderIndex);
+  }
+
+  if (Number.isFinite(record.x) && Number.isFinite(record.y) && record.y >= 1650000 && record.y <= 2250000) {
+    if (record.x < 4500000) return 0;
+    if (record.x < 6600000) return 1;
+    return 2;
+  }
+
+  // Direct string input is retained for rule tests and older copies of this same template.
+  const sequentialSlot = index - phoneIndex - 1;
+  return sequentialSlot >= 0 && sequentialSlot < 3 ? sequentialSlot : -1;
+};
+
+const cleanFixedLayoutEducationValue = (text = '') => {
+  const lines = tidyMultiline(text)
+    .split('\n')
+    .map((line) => cleanInline(line))
+    .filter(Boolean);
+  const value = lines.reduce((joined, line) => {
+    if (!joined) return line;
+    const separator = FIXED_LAYOUT_EDUCATION_INSTITUTION_PATTERN.test(joined) &&
+      FIXED_LAYOUT_EDUCATION_INSTITUTION_PATTERN.test(line) ? ' / ' : ' ';
+    return `${joined}${separator}${line}`;
+  }, '');
+  if (!value || /^[\s/|,.;:-]+$/.test(value)) return '';
+  if (FIXED_LAYOUT_EDUCATION_NOISE_PATTERN.test(value) || FIXED_LAYOUT_CAREER_PATTERN.test(value)) return '';
+  return value;
+};
+
+const hasFixedLayoutEducationConflict = (label, value) => {
+  const explicitDegrees = FIXED_LAYOUT_EDUCATION_LABELS.filter((degree) => value.includes(degree));
+  return explicitDegrees.length > 0 && !explicitDegrees.includes(label);
+};
 
 const extractFixedLayoutBirth = (text = '') => {
   const match = String(text).match(FIXED_LAYOUT_BIRTH_PATTERN);
@@ -1689,8 +1740,11 @@ const extractFixedLayoutBirth = (text = '') => {
   return `${year}.${String(month).padStart(2, '0')}.${String(day).padStart(2, '0')}`;
 };
 
-const getFixedLayoutProfile = (shapeTexts = []) => {
-  const blocks = shapeTexts.map((text) => String(text ?? '').trim());
+const getFixedLayoutProfile = (shapeInputs = []) => {
+  const shapeRecords = shapeInputs.map((input) => typeof input === 'string'
+    ? { text: input, placeholderIndex: null, x: null, y: null }
+    : { text: input?.text || '', placeholderIndex: input?.placeholderIndex ?? null, x: input?.x ?? null, y: input?.y ?? null });
+  const blocks = shapeRecords.map(({ text }) => String(text ?? '').trim());
   if (blocks.filter(Boolean).length < 8 || blocks.some((text) => FIXED_LAYOUT_HEADER_PATTERN.test(text))) return null;
 
   const emailIndex = blocks.findIndex((text) => Boolean(extractEmail(text)) && cleanInline(text) === extractEmail(text));
@@ -1731,15 +1785,27 @@ const getFixedLayoutProfile = (shapeTexts = []) => {
     ...careerIndexes.map(({ index }) => index),
   ]);
 
-  const educationBlocks = blocks
-    .map((text, index) => ({ text: cleanInline(text), index }))
-    .filter(({ text, index }) => index > phoneIndex && !excludedIndexes.has(index) &&
-      EDUCATION_FALLBACK_SCHOOL_PATTERN.test(text) && !EDUCATION_FALLBACK_SECTION_NOISE_PATTERN.test(text));
-  educationBlocks.forEach(({ index }) => excludedIndexes.add(index));
-  const educationList = uniq(educationBlocks.flatMap(({ text }) => {
-    const records = splitEducationRecords(text);
-    return records.length ? records : [text];
-  }));
+  const educationSlots = [null, null, null];
+  let educationDegreeConflict = false;
+  shapeRecords.forEach((record, index) => {
+    if (index <= phoneIndex || excludedIndexes.has(index)) return;
+    const slot = getFixedLayoutEducationSlot(record, index, phoneIndex);
+    if (slot < 0) return;
+
+    const value = cleanFixedLayoutEducationValue(record.text);
+    const hasSlotMetadata = FIXED_LAYOUT_EDUCATION_PLACEHOLDERS.has(record.placeholderIndex) ||
+      (Number.isFinite(record.x) && Number.isFinite(record.y) && record.y >= 1650000 && record.y <= 2250000);
+    if (hasSlotMetadata) excludedIndexes.add(index);
+    if (!value) return;
+
+    const label = FIXED_LAYOUT_EDUCATION_LABELS[slot];
+    educationDegreeConflict ||= hasFixedLayoutEducationConflict(label, value);
+    educationSlots[slot] = educationSlots[slot] ? `${educationSlots[slot]} / ${value}` : value;
+    excludedIndexes.add(index);
+  });
+  const educationList = educationSlots
+    .map((value, slot) => value ? `[${FIXED_LAYOUT_EDUCATION_LABELS[slot]}] ${value}` : '')
+    .filter(Boolean);
 
   if (!expertise) {
     expertise = blocks
@@ -1797,6 +1863,7 @@ const getFixedLayoutProfile = (shapeTexts = []) => {
     email: extractEmail(blocks[emailIndex]),
     phone: extractPhone(blocks[phoneIndex]),
     educationList,
+    educationDegreeConflict,
     careerBlock: careerBlock?.text || '',
     evaluationRaw,
   };
@@ -1914,8 +1981,8 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
 
   try {
     const zip = await JSZip.loadAsync(input);
-    const { allNodes, allText, shapeTexts } = await extractNodesAndText(zip);
-    const fixedLayoutProfile = getFixedLayoutProfile(shapeTexts);
+    const { allNodes, allText, shapeRecords } = await extractNodesAndText(zip);
+    const fixedLayoutProfile = getFixedLayoutProfile(shapeRecords);
     const row = createEmptyProfile(fileName);
     const fileNameCandidate = extractNameFromFileName(fileName);
     const labeledName = findLabeledValue(allNodes, FIELD_LABELS.name, { lookAhead: 5, validator: refineName });
@@ -2061,6 +2128,9 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
     row.reviewTags = formatAnomaly
       ? uniq([FORMAT_ANOMALY_TAG, ...tagSuspiciousProfile(row)])
       : tagSuspiciousProfile(row);
+    if (fixedLayoutProfile?.educationDegreeConflict) {
+      row.reviewTags = uniq([...row.reviewTags, 'education_review']);
+    }
 
     return row;
   } catch {

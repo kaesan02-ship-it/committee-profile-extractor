@@ -412,10 +412,73 @@ test('getFixedLayoutProfile extracts the new unlabeled grid without inventing fi
   assert.equal(profile.affiliation, '한국인재연구소 대표');
   assert.equal(profile.birth, '1978.01.08');
   assert.deepEqual(profile.educationList, [
-    '인지대학교 영어영문학 학사',
-    '숙명여자대학교 인적자원개발 석사',
+    '[학사] 인지대학교 영어영문학 학사',
+    '[석사] 숙명여자대학교 인적자원개발 석사',
   ]);
   assert.equal(profile.evaluationRaw, '[서류] 한국전력공사, 한국도로공사\n[면접] 기업은행, 한국산업은행');
+});
+
+test('getFixedLayoutProfile preserves fixed degree slots instead of shifting nonempty values', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    { text: '김성중' },
+    { text: '現) 한국앙코르커리어 전문위원 (2026년~현재)' },
+    { text: '한국해외인프라개발공사, 국가정보원' },
+    { text: '평가전문위원 교육 이수' },
+    { text: '한국과학기술기획평가원, 국가정보원' },
+    { text: '한국앙코르커리어 전문위원' },
+    { text: '인사, 행정' },
+    { text: '1971년 4월 28일' },
+    { text: 'person@example.com' },
+    { text: '010-1234-5678' },
+    { text: '중앙대 행정학', x: 3240000, y: 1857600 },
+    { text: '/ /', x: 7183080, y: 1864800 },
+  ]);
+
+  assert.deepEqual(profile.educationList, ['[학사] 중앙대 행정학']);
+  assert.equal(profile.educationDegreeConflict, false);
+});
+
+test('getFixedLayoutProfile labels placeholder-backed education in bachelor-master-doctor order', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    { text: '김혜림' },
+    { text: '現) 어텀브릿 HR사업본부 이사 (2024년~현재)' },
+    { text: '국가과학기술인력개발원, 농협' },
+    { text: '채용면접전문가 교육 이수' },
+    { text: '소상공인진흥공단, 강서구시설공단' },
+    { text: '어텀브릿 HR사업본부 이사' },
+    { text: '인사, 채용, 교육' },
+    { text: '1984년 5월 19일' },
+    { text: 'person@example.com' },
+    { text: '010-1234-5678' },
+    { text: '인하공업전문대학 항공운항과\n학점은행제 경영학과', placeholderIndex: 30 },
+    { text: '연세대학교 호텔외식급식경영학과', placeholderIndex: 31 },
+    { text: '한양대학교\n관광학과', placeholderIndex: 32 },
+  ]);
+
+  assert.deepEqual(profile.educationList, [
+    '[학사] 인하공업전문대학 항공운항과 / 학점은행제 경영학과',
+    '[석사] 연세대학교 호텔외식급식경영학과',
+    '[박사] 한양대학교 관광학과',
+  ]);
+});
+
+test('getFixedLayoutProfile flags source text that conflicts with its fixed degree slot', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    { text: '홍길동' },
+    { text: '現) 한국인재연구소 대표 (2024년~현재)' },
+    { text: '한국전력공사, 한국도로공사' },
+    { text: '전문면접관 교육 이수' },
+    { text: '기업은행, 한국산업은행' },
+    { text: '한국인재연구소 대표' },
+    { text: 'HR, 채용, 교육' },
+    { text: '1978년 1월 8일' },
+    { text: 'person@example.com' },
+    { text: '010-1234-5678' },
+    { text: '인지대학교 영어영문학 석사', placeholderIndex: 30 },
+  ]);
+
+  assert.equal(profile.educationDegreeConflict, true);
+  assert.deepEqual(profile.educationList, ['[학사] 인지대학교 영어영문학 석사']);
 });
 
 test('getFixedLayoutProfile does not activate on labeled legacy layouts', () => {
