@@ -1629,6 +1629,7 @@ const extractNodesAndText = async (zip) => {
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   const allNodes = [];
+  const shapeTexts = [];
   let allText = '';
 
   for (const path of slidePaths) {
@@ -1636,6 +1637,17 @@ const extractNodesAndText = async (zip) => {
     if (!file) continue;
 
     const xml = await file.async('string');
+    const shapes = xml.match(/<p:sp>[\s\S]*?<\/p:sp>/g) || [];
+
+    for (const shape of shapes) {
+      const shapeParagraphs = shape.split(/<a:p>/).slice(1)
+        .map((paragraph) => {
+          const runs = paragraph.match(/<a:t>([^<]*)<\/a:t>/g) || [];
+          return decodeHTML(runs.map((item) => item.replace(/<\/?a:t>/g, '')).join('')).trim();
+        })
+        .filter(Boolean);
+      shapeTexts.push(shapeParagraphs.join('\n').trim());
+    }
     const paragraphs = xml.split(/<a:p>/);
 
     for (const paragraph of paragraphs) {
@@ -1653,7 +1665,141 @@ const extractNodesAndText = async (zip) => {
     }
   }
 
-  return { allNodes, allText };
+  return { allNodes, allText, shapeTexts };
+};
+
+const FIXED_LAYOUT_HEADER_PATTERN = /(?:기본\s*인적사항|소속\s*및\s*연락처|전문\s*분야|경력사항\s*및|주요\s*실적)/;
+const FIXED_LAYOUT_BIRTH_PATTERN = /^\s*(\d{2}|(?:19|20)\d{2})\s*(?:년|[./-])\s*(\d{1,2})\s*(?:월|[./-])\s*(\d{1,2})\s*일?\.?\s*$/;
+const FIXED_LAYOUT_QUALIFICATION_PATTERN = /(?:자격|교육\s*이수|과정\s*이수|논문|저서|학위|박사|석사|학사)/;
+const FIXED_LAYOUT_CAREER_PATTERN = /(?:^|\s)(?:現|前|현|전)\s*[).:：]/;
+
+const extractFixedLayoutBirth = (text = '') => {
+  const match = String(text).match(FIXED_LAYOUT_BIRTH_PATTERN);
+  if (!match) return '';
+
+  let year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (match[1].length === 2) {
+    const currentYear = new Date().getFullYear();
+    const latestAdultYear = currentYear - 18;
+    year += year <= latestAdultYear % 100 ? 2000 : 1900;
+  }
+  if (month < 1 || month > 12 || day < 1 || day > new Date(year, month, 0).getDate()) return '';
+  return `${year}.${String(month).padStart(2, '0')}.${String(day).padStart(2, '0')}`;
+};
+
+const getFixedLayoutProfile = (shapeTexts = []) => {
+  const blocks = shapeTexts.map((text) => String(text ?? '').trim());
+  if (blocks.filter(Boolean).length < 8 || blocks.some((text) => FIXED_LAYOUT_HEADER_PATTERN.test(text))) return null;
+
+  const emailIndex = blocks.findIndex((text) => Boolean(extractEmail(text)) && cleanInline(text) === extractEmail(text));
+  const phoneIndex = blocks.findIndex((text) => Boolean(extractPhone(text)) && cleanInline(text) === extractPhone(text));
+  const birthIndex = emailIndex > 0 && extractFixedLayoutBirth(blocks[emailIndex - 1]) ? emailIndex - 1 : -1;
+  if (birthIndex < 2 || emailIndex <= birthIndex || phoneIndex <= emailIndex || phoneIndex - birthIndex > 3) return null;
+
+  const affiliationIndex = birthIndex - 2;
+  const expertiseIndex = birthIndex - 1;
+  const affiliation = sanitizeAffiliation(blocks[affiliationIndex]);
+  let expertise = cleanInline(blocks[expertiseIndex]);
+  if (
+    affiliation.length > 70 || AFFILIATION_HEADER_NOISE_PATTERN.test(affiliation) ||
+    AFFILIATION_FALSE_EDUCATION_PATTERN.test(affiliation) || extractEmail(affiliation) || extractPhone(affiliation) ||
+    extractEmail(expertise) || extractPhone(expertise)
+  ) return null;
+
+  let careerIndexes = blocks
+    .map((text, index) => ({ text, index }))
+    .filter(({ text }) => FIXED_LAYOUT_CAREER_PATTERN.test(text) && /\d{4}/.test(text));
+  if (!careerIndexes.length) {
+    careerIndexes = blocks
+      .map((text, index) => ({ text, index }))
+      .filter(({ text, index }) => index > 0 && index < affiliationIndex && text.length >= 40 &&
+        !FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text) &&
+        (text.match(/(?:19|20)?\d{2}\s*(?:년|[.])/g) || []).length >= 2)
+      .sort((a, b) => b.text.length - a.text.length)
+      .slice(0, 1);
+  }
+  const careerBlock = careerIndexes.sort((a, b) => b.text.length - a.text.length)[0] || null;
+  const excludedIndexes = new Set([
+    0,
+    affiliationIndex,
+    expertiseIndex,
+    birthIndex,
+    emailIndex,
+    phoneIndex,
+    ...careerIndexes.map(({ index }) => index),
+  ]);
+
+  const educationBlocks = blocks
+    .map((text, index) => ({ text: cleanInline(text), index }))
+    .filter(({ text, index }) => index > phoneIndex && !excludedIndexes.has(index) &&
+      EDUCATION_FALLBACK_SCHOOL_PATTERN.test(text) && !EDUCATION_FALLBACK_SECTION_NOISE_PATTERN.test(text));
+  educationBlocks.forEach(({ index }) => excludedIndexes.add(index));
+  const educationList = uniq(educationBlocks.flatMap(({ text }) => {
+    const records = splitEducationRecords(text);
+    return records.length ? records : [text];
+  }));
+
+  if (!expertise) {
+    expertise = blocks
+      .map((text, index) => ({ text: cleanInline(text), index }))
+      .filter(({ index }) => index > phoneIndex && !excludedIndexes.has(index))
+      .map(({ text }) => text)
+      .find((text) => text.length >= 3 && text.length <= 100 && /[,·/]/.test(text) &&
+        !hasAffiliationSignal(text) && !FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text) && !/\d{4}/.test(text)) || '';
+  }
+
+  const assessmentBlocks = blocks
+    .map((text, index) => ({ text: tidyMultiline(text), index }))
+    .filter(({ index }) => index < affiliationIndex && !excludedIndexes.has(index));
+  const qualificationPosition = assessmentBlocks.findIndex(({ text }) => FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text));
+  const isMixedEvaluationBlock = (text) => /서류/.test(text) && /면접/.test(text);
+  let documentScreening = assessmentBlocks.find(({ text }) =>
+    !FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text) && !isMixedEvaluationBlock(text) &&
+    /서류\s*(?:평가|심사|전형)/.test(text))?.text || '';
+  let interviewScreening = assessmentBlocks.find(({ text }) =>
+    !FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text) && !isMixedEvaluationBlock(text) &&
+    /면접\s*(?:평가|심사|전형)/.test(text))?.text || '';
+
+  if (documentScreening && documentScreening === interviewScreening) {
+    documentScreening = '';
+    interviewScreening = '';
+  }
+
+  if (qualificationPosition > 0) {
+    documentScreening ||= assessmentBlocks[qualificationPosition - 1]?.text || '';
+    interviewScreening ||= assessmentBlocks.slice(qualificationPosition + 1)
+      .find(({ text }) => !FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text))?.text || '';
+  }
+
+  if (!documentScreening && !interviewScreening) {
+    const organizationLists = blocks
+      .map((text, index) => ({ text: cleanInline(text), index }))
+      .filter(({ text, index }) => !excludedIndexes.has(index) && !FIXED_LAYOUT_QUALIFICATION_PATTERN.test(text) &&
+        (text.match(/(?:공사|공단|은행|재단|진흥원|연구원|공기업|정부|공제회|보험원)/g) || []).length >= 2 &&
+        (text.match(/[,，]/g) || []).length >= 2 && !/\d{4}/.test(text));
+    if (organizationLists.length >= 2) {
+      documentScreening = organizationLists[0].text;
+      interviewScreening = organizationLists[1].text;
+    }
+  }
+
+  const evaluationRaw = [
+    documentScreening && `[서류] ${cleanInline(documentScreening)}`,
+    interviewScreening && `[면접] ${cleanInline(interviewScreening)}`,
+  ].filter(Boolean).join('\n');
+
+  return {
+    affiliation,
+    expertise,
+    birth: extractFixedLayoutBirth(blocks[birthIndex]),
+    email: extractEmail(blocks[emailIndex]),
+    phone: extractPhone(blocks[phoneIndex]),
+    educationList,
+    careerBlock: careerBlock?.text || '',
+    evaluationRaw,
+  };
 };
 
 const isMissingValue = (value = '') => {
@@ -1768,7 +1914,8 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
 
   try {
     const zip = await JSZip.loadAsync(input);
-    const { allNodes, allText } = await extractNodesAndText(zip);
+    const { allNodes, allText, shapeTexts } = await extractNodesAndText(zip);
+    const fixedLayoutProfile = getFixedLayoutProfile(shapeTexts);
     const row = createEmptyProfile(fileName);
     const fileNameCandidate = extractNameFromFileName(fileName);
     const labeledName = findLabeledValue(allNodes, FIELD_LABELS.name, { lookAhead: 5, validator: refineName });
@@ -1881,6 +2028,32 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
       row.careerDetails,
       EMPTY_VALUE
     );
+
+    if (fixedLayoutProfile) {
+      const fixedCareerEntries = splitCareerEntries(fixedLayoutProfile.careerBlock);
+      row.birth = firstNonEmpty(fixedLayoutProfile.birth, EMPTY_VALUE);
+      row.phone = firstNonEmpty(fixedLayoutProfile.phone, EMPTY_VALUE);
+      row.email = firstNonEmpty(fixedLayoutProfile.email, EMPTY_VALUE);
+      row.affiliation = firstNonEmpty(fixedLayoutProfile.affiliation, EMPTY_VALUE);
+      row.expertise = firstNonEmpty(fixedLayoutProfile.expertise, EMPTY_VALUE);
+      row.educationList = fixedLayoutProfile.educationList;
+      row.educationRaw = firstNonEmptyPreserveLines(fixedLayoutProfile.educationList.join('\n'), EMPTY_VALUE);
+      row.educationDetails = firstNonEmptyPreserveLines(
+        formatEducationDetails(fixedLayoutProfile.educationList),
+        row.educationRaw,
+        EMPTY_VALUE
+      );
+      row.education = firstNonEmpty(
+        extractHighestEducation(fixedLayoutProfile.educationList),
+        fixedLayoutProfile.educationList[fixedLayoutProfile.educationList.length - 1],
+        EMPTY_VALUE
+      );
+      row.careerList = fixedCareerEntries;
+      row.careerRaw = firstNonEmptyPreserveLines(tidyMultiline(fixedLayoutProfile.careerBlock), EMPTY_VALUE);
+      row.careerDetails = firstNonEmptyPreserveLines(formatCareerDetails(fixedCareerEntries), row.careerRaw, EMPTY_VALUE);
+      row.career = firstNonEmptyPreserveLines(formatCareerSummary(fixedCareerEntries), row.careerDetails, row.careerRaw, EMPTY_VALUE);
+      row.evaluationRaw = firstNonEmptyPreserveLines(fixedLayoutProfile.evaluationRaw, EMPTY_VALUE);
+    }
     const formatAnomaly = isProfileFormatAnomaly(row);
     if (formatAnomaly) applyFormatAnomalyGuard(row);
 
@@ -1918,6 +2091,7 @@ export const __testing = {
   findSectionBody,
   getEducationSourceLines,
   getSourceLineEducationRecords,
+  getFixedLayoutProfile,
   isProfileFormatAnomaly,
   sanitizeAffiliation,
   splitEducationRecords,

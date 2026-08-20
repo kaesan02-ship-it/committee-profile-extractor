@@ -391,3 +391,121 @@ test('fallback extractors recover split contact and evaluation labels', () => {
     '< 면접 위원 > 대구은행 글로벌부문 직원 선발 대구은행 해외유학생 인턴 선발'
   );
 });
+
+test('getFixedLayoutProfile extracts the new unlabeled grid without inventing fields', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    '홍길동',
+    '한국전력공사, 한국도로공사',
+    '채용면접전문가 교육과정 이수\n(논문) 인재평가 연구',
+    '기업은행, 한국산업은행',
+    '기타 프로젝트 수행',
+    '한국인재연구소 대표',
+    'HR, 채용, 교육',
+    '1978년 1월 8일',
+    'person@example.com',
+    '010-1234-5678',
+    '인지대학교 영어영문학 학사',
+    '숙명여자대학교 인적자원개발 석사',
+    '現) 한국인재연구소 대표 (2024년 1월~현재)\n前) 한국기업 팀장 (2016년~2023년)',
+  ]);
+
+  assert.equal(profile.affiliation, '한국인재연구소 대표');
+  assert.equal(profile.birth, '1978.01.08');
+  assert.deepEqual(profile.educationList, [
+    '인지대학교 영어영문학 학사',
+    '숙명여자대학교 인적자원개발 석사',
+  ]);
+  assert.equal(profile.evaluationRaw, '[서류] 한국전력공사, 한국도로공사\n[면접] 기업은행, 한국산업은행');
+});
+
+test('getFixedLayoutProfile does not activate on labeled legacy layouts', () => {
+  assert.equal(__testing.getFixedLayoutProfile([
+    '기본 인적사항',
+    '홍길동',
+    '소속 및 연락처',
+    '한국인재연구소 대표',
+    '전문 분야',
+    'HR',
+    '1978년 1월 8일',
+    'person@example.com',
+    '010-1234-5678',
+  ]), null);
+});
+
+test('getFixedLayoutProfile preserves empty slots and reads strict short-year birth dates', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    '장은경',
+    '現) 가원 대표 (2023년~현재)',
+    '농협, 국민은행',
+    '전문면접관 교육 이수',
+    '한전KPS, 하나은행',
+    '',
+    '가원 대표',
+    'IT, 금융',
+    '79.11.26',
+    'person@example.com',
+    '010-1234-5678',
+    '성신여자대학교 컴퓨터정보학부 졸업',
+  ]);
+
+  assert.equal(profile.birth, '1979.11.26');
+  assert.equal(profile.affiliation, '가원 대표');
+  assert.equal(profile.evaluationRaw, '[서류] 농협, 국민은행\n[면접] 한전KPS, 하나은행');
+});
+
+test('getFixedLayoutProfile does not duplicate one mixed evaluation paragraph into both categories', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    '허철',
+    '現) 넥스트솔루션 대표 (2017년~현재)',
+    '서울시 사업 심사: 참여자 서류 및 면접 평가',
+    '넥스트솔루션',
+    '채용, 교육',
+    '1974.10.29',
+    'person@example.com',
+    '010-1234-5678',
+    '관동대학교 컴퓨터공학',
+  ]);
+
+  assert.equal(profile.evaluationRaw, '');
+});
+
+test('getFixedLayoutProfile recovers an unmarked dated career block', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    '김현지',
+    '이루다 컨설팅 대표 (2022.01~현재) 에어부산 교육관 (2009.03~2013.07)',
+    '기업은행, 산업은행',
+    '자격 과정 이수',
+    '국민은행, 하나은행',
+    '이루다 컨설팅',
+    '채용, 교육',
+    '1979.03.19',
+    'person@example.com',
+    '010-1234-5678',
+    '영남대학교 심리학과',
+  ]);
+
+  assert.match(profile.careerBlock, /이루다 컨설팅 대표/);
+});
+
+test('getFixedLayoutProfile recovers two displaced organization evaluation lists only', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    '박신선',
+    '전문면접관 자격과정 이수',
+    '내부 실무 인원 채용 참여',
+    '피플커리어 대표',
+    '',
+    '1970년 8월 28일',
+    'person@example.com',
+    '010-1234-5678',
+    '경원대학교 사회체육학과',
+    '現) 피플커리어 대표 (2025년~현재)',
+    '인사, 채용, 교육',
+    '한국석유공사, 한국수출입은행, 코레일공단',
+    '한국전력공사, 신용회복위원회, 토지주택공사',
+  ]);
+
+  assert.equal(
+    profile.evaluationRaw,
+    '[서류] 한국석유공사, 한국수출입은행, 코레일공단\n[면접] 한국전력공사, 신용회복위원회, 토지주택공사'
+  );
+});
