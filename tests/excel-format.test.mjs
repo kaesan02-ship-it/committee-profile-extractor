@@ -27,6 +27,54 @@ test('IBK current affiliation falls back to the explicit current career only', (
   assert.equal(formatIbkPreviousCareer(row), '신용보증기금 정보시스템부 팀장');
 });
 
+test('IBK previous career selects the most recently ended job from ascending history', () => {
+  const row = {
+    affiliation: '투에이치헤이븐 대표',
+    careerDetails: '現 투에이치헤이븐 대표(2024년 8월 ~ 현재) 前 보건복지부 국립소록도병원 주무관(2000년 06월 ~ 2009년 04월) 前 보건복지부 국립정신건강센터 주무관(2009년 05월 ~ 2023년 02월)',
+  };
+
+  assert.equal(formatIbkPreviousCareer(row), '보건복지부 국립정신건강센터 주무관');
+});
+
+test('IBK previous career keeps the company and title when the date precedes the title', () => {
+  const row = {
+    affiliation: '한국고용평가협회 대표',
+    careerDetails: '現 한국고용평가협회 (2020.04. ~ 현재) 대표 現 주식회사 잡트렌드 (2014.05 ~ 현재) 대표이사 前 주식회사 굿잡투데이 (2009.05 ~ 2014.04) 교육 및 컨설팅 부문 총괄사업 본부장',
+  };
+
+  assert.equal(
+    formatIbkPreviousCareer(row),
+    '주식회사 굿잡투데이 교육 및 컨설팅 부문 총괄사업 본부장'
+  );
+});
+
+test('IBK previous career trusts a closed date over a stale current marker', () => {
+  const row = {
+    affiliation: '두배러컨설팅 대표',
+    careerDetails: '現 두배러컨설팅 대표 (2012년 8월 ~ 현재) 現 한국채용정보 교육팀 과장 (2011년 1월 ~ 2012년 7월) 前 한국콘텐츠진흥원 채용센터 부센터장 (2010년 5월 ~ 2010년 12월)',
+  };
+
+  assert.equal(formatIbkPreviousCareer(row), '한국채용정보 교육팀 과장');
+});
+
+test('IBK previous career returns blank when only current roles are supported', () => {
+  const row = {
+    affiliation: '바스제로 컨설팅 대표',
+    careerDetails: '現 바스제로 컨설팅 대표 (2024년~현재) 現 한국복지사이버대학교 특임교수',
+  };
+
+  assert.equal(formatIbkPreviousCareer(row), '');
+});
+
+test('IBK previous career handles Chinese current-date notation without leaking characters', () => {
+  const row = {
+    affiliation: '이루다 컨설팅 대표',
+    careerDetails: '이루다 컨설팅 대표 (2022.~現在) L&I컨설팅 전문위원 (2016.11~2024.02) 에어부산 직무교육관 (2009.03~2013.07)',
+  };
+
+  assert.equal(formatIbkPreviousCareer(row), 'L&I컨설팅 전문위원');
+});
+
 test('formatCareerForTemplate splits spaced current date markers', () => {
   const formatted = formatCareerForTemplate({
     careerDetails: '2021. 10~2022. 03 대신정보통신 부장. 한국교통안전공단 국가자격시스템 개발 / 운영 2024. 01~현 재 SMT 정보기술 부장. 한국교육학술정보원 위탁운영팀 시스템 ADMIN',

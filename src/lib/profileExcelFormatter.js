@@ -60,7 +60,7 @@ const stripEvaluationSections = (value = '') => String(value ?? '')
   .trim();
 
 const CAREER_MARKER_LOOKAHEAD = /(?=(?:現|前)\s*[).:：-]?\s*|(?:현재|현|전)\s*(?:[.:：-]\s*|\s+))/g;
-const CAREER_DATE_RANGE_SOURCE = String.raw`\(?\s*\d{4}\s*(?:년|[.])?\s*(?:\d{1,2}\s*(?:월|[.])?)?(?:\s*\d{1,2}\s*(?:일|[.])?)?\s*[~∼〜-]\s*(?:\d{4}\s*(?:년|[.])?\s*(?:\d{1,2}\s*(?:월|[.])?)?(?:\s*\d{1,2}\s*(?:일|[.])?)?|현재|現|현\s*재)\s*\)?`;
+const CAREER_DATE_RANGE_SOURCE = String.raw`\(?\s*\d{4}\s*(?:년|[.])?\s*(?:\d{1,2}\s*(?:월|[.])?)?(?:\s*\d{1,2}\s*(?:일|[.])?)?\s*[~∼〜-]\s*(?:\d{4}\s*(?:년|[.])?\s*(?:\d{1,2}\s*(?:월|[.])?)?(?:\s*\d{1,2}\s*(?:일|[.])?)?|현재|現在|現|현\s*재)\s*\)?`;
 const CAREER_DATE_RANGE_REGEX = new RegExp(CAREER_DATE_RANGE_SOURCE);
 const LEADING_CAREER_DATE_RANGE_REGEX = new RegExp(`^\\s*(${CAREER_DATE_RANGE_SOURCE})\\s*(.*)$`);
 
@@ -212,8 +212,53 @@ const stripIbkCareerMeta = (value = '') => cleanupEntry(value)
   .replace(/^(?:現|前|현재|현|전)\s*[).:：-]?\s*/i, '')
   .replace(new RegExp(CAREER_DATE_RANGE_SOURCE, 'g'), ' ')
   .replace(/\(\s*\)/g, ' ')
+  .replace(/\s*[-–]\s*$/, '')
   .replace(/\s{2,}/g, ' ')
   .trim();
+
+const IBK_CLOSED_CAREER_END_REGEX = /[~∼〜-]\s*(\d{4})\s*(?:년|[.])?\s*(\d{1,2})?\s*(?:월|[.])?\s*(\d{1,2})?\s*(?:일|[.])?/g;
+const IBK_CURRENT_CAREER_END_REGEX = /[~∼〜-]\s*(?:현재|現在|現|현\s*재)(?:\)|\s|$)/;
+
+const getIbkClosedCareerEnd = (value = '') => {
+  const matches = [...cleanupEntry(value).matchAll(IBK_CLOSED_CAREER_END_REGEX)];
+  if (!matches.length) return null;
+
+  return Math.max(...matches.map((match) => {
+    const year = Number(match[1]);
+    const month = Number(match[2] || 12);
+    const day = Number(match[3] || 31);
+    return year * 10000 + month * 100 + day;
+  }));
+};
+
+const splitIbkCareerEntries = (row = {}) => {
+  const source = normalizeMultiline(stripEvaluationSections(
+    row.careerDetails || row.careerRaw || row.career
+  ));
+  if (source === EMPTY_VALUE) return [];
+
+  const markerEntries = source
+    .replace(new RegExp(`\\s+${CAREER_MARKER_LOOKAHEAD.source}`, 'g'), '\n')
+    .split(/\n+/)
+    .map(stripEvaluationNoise)
+    .filter((line) => line.length >= 3 && !isCareerHeaderOnlyLine(line));
+
+  if (markerEntries.length > 1) return unique(markerEntries);
+
+  if (/^\(?\s*\d{4}/.test(source)) return splitCareerEntries(source);
+
+  const trailingDateEntryRegex = new RegExp(
+    `([\\s\\S]*?${CAREER_DATE_RANGE_SOURCE})`,
+    'g'
+  );
+  const trailingDateEntries = [...source.matchAll(trailingDateEntryRegex)]
+    .map((match) => stripEvaluationNoise(match[1]))
+    .filter((line) => line.length >= 3);
+
+  return trailingDateEntries.length > 1
+    ? unique(trailingDateEntries)
+    : splitCareerEntries(source);
+};
 
 export const formatIbkCurrentAffiliation = (row = {}) => {
   if (!isEmptyValue(row.affiliation)) return cleanupEntry(row.affiliation);
@@ -224,9 +269,16 @@ export const formatIbkCurrentAffiliation = (row = {}) => {
 };
 
 export const formatIbkPreviousCareer = (row = {}) => {
-  const previousLine = toLines(formatCareerForTemplate(row))
-    .find((line) => /^前\)/.test(line));
-  return previousLine ? stripIbkCareerMeta(previousLine) : '';
+  const entries = splitIbkCareerEntries(row);
+  const closedCandidates = entries
+    .map((entry, index) => ({ entry, index, end: getIbkClosedCareerEnd(entry) }))
+    .filter(({ entry, end }) => end !== null && !IBK_CURRENT_CAREER_END_REGEX.test(entry))
+    .sort((a, b) => b.end - a.end || a.index - b.index);
+
+  if (closedCandidates.length) return stripIbkCareerMeta(closedCandidates[0].entry);
+
+  const explicitPrevious = entries.find((entry) => /^(?:前|전)\s*[).:：-]?\s*/.test(entry));
+  return explicitPrevious ? stripIbkCareerMeta(explicitPrevious) : '';
 };
 
 const trimRepeatedEvaluationProjectBlock = (value = '') => {
