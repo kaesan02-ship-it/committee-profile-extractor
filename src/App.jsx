@@ -425,7 +425,7 @@ function App() {
     for (let i = 0; i < files.length; i += 1) {
       setCurrentIdx(i);
       const upload = files[i];
-      const parsed = await parsePptxProfile(upload.file);
+      const parsed = await parsePptxProfile(upload.file, upload.sourceRelativePath);
 
       nextResults.push({
         ...parsed,

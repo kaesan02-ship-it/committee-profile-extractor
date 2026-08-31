@@ -357,8 +357,8 @@ const extractGender = (text = '') => {
 
 const extractGenderFromFileName = (fileName = '') => {
   const stem = cleanInline(fileName).replace(/\.[^.]+$/g, '');
-  if (/(?:^|[_\s-])남(?:[_\s.-]|$)/u.test(stem)) return '남';
-  if (/(?:^|[_\s-])여(?:[_\s.-]|$)/u.test(stem)) return '여';
+  if (/(?:^|[\\/_\s-])남(?:[\\/_\s.-]|$)/u.test(stem)) return '남';
+  if (/(?:^|[\\/_\s-])여(?:[\\/_\s.-]|$)/u.test(stem)) return '여';
   return '';
 };
 
@@ -1685,10 +1685,11 @@ const FIXED_LAYOUT_CAREER_PATTERN = /(?:^|\s)(?:現|前|현|전)\s*[).:：]/;
 const FIXED_LAYOUT_EDUCATION_LABELS = ['학사', '석사', '박사'];
 const FIXED_LAYOUT_EDUCATION_PLACEHOLDERS = new Map([[30, 0], [31, 1], [32, 2]]);
 const FIXED_LAYOUT_EDUCATION_NOISE_PATTERN = /(?:경력|수행실적|주요이력|자격|수상|저서|논문|강사|면접|서류|심사|평가)/;
-const FIXED_LAYOUT_EDUCATION_INSTITUTION_PATTERN = /(?:대학교|대학원|대학|University|College|KAIST|POSTECH|학점은행제|평생교육진흥원)/i;
+const FIXED_LAYOUT_EDUCATION_INSTITUTION_PATTERN = /(?:대학교|대학원|대학|(?:^|\s)[가-힣]{2,15}(?:전문대|방송대|외대|교대|예대|과기대|산업대|시립대|여대|대)(?=\s|$)|University|College|KAIST|POSTECH|학점은행제|평생교육진흥원)/i;
 const FIXED_LAYOUT_CAREER_PLACEHOLDER = 20;
 const FIXED_LAYOUT_DOCUMENT_PLACEHOLDER = 21;
 const FIXED_LAYOUT_INTERVIEW_PLACEHOLDER = 23;
+const FIXED_LAYOUT_PROFILE_PLACEHOLDERS = [11, 20, 23, 25, 26, 27, 28, 29, 30];
 
 const getFixedLayoutSlotRecord = (shapeRecords, placeholderIndex, minY, maxY) => {
   const placeholderRecord = shapeRecords.find((record) => record.placeholderIndex === placeholderIndex);
@@ -1746,7 +1747,8 @@ const hasFixedLayoutEducationConflict = (label, value) => {
 };
 
 const extractFixedLayoutBirth = (text = '') => {
-  const match = String(text).match(FIXED_LAYOUT_BIRTH_PATTERN);
+  const normalized = String(text).replace(/((?:19|20)?\d{2})\.\s*년/u, '$1년');
+  const match = normalized.match(FIXED_LAYOUT_BIRTH_PATTERN);
   if (!match) return '';
 
   let year = Number(match[1]);
@@ -1766,20 +1768,34 @@ const getFixedLayoutProfile = (shapeInputs = []) => {
     ? { index, text: input, placeholderIndex: null, x: null, y: null }
     : { index, text: input?.text || '', placeholderIndex: input?.placeholderIndex ?? null, x: input?.x ?? null, y: input?.y ?? null });
   const blocks = shapeRecords.map(({ text }) => String(text ?? '').trim());
-  if (blocks.filter(Boolean).length < 8 || blocks.some((text) => FIXED_LAYOUT_HEADER_PATTERN.test(text))) return null;
+  const placeholderIndexes = new Set(shapeRecords.map(({ placeholderIndex }) => placeholderIndex));
+  const hasFixedProfileSlots = FIXED_LAYOUT_PROFILE_PLACEHOLDERS.every((index) => placeholderIndexes.has(index));
+  if (blocks.filter(Boolean).length < 8 ||
+    (!hasFixedProfileSlots && blocks.some((text) => FIXED_LAYOUT_HEADER_PATTERN.test(text)))) return null;
 
-  const emailIndex = blocks.findIndex((text) => Boolean(extractEmail(text)) && cleanInline(text) === extractEmail(text));
-  const phoneIndex = blocks.findIndex((text) => Boolean(extractPhone(text)) && cleanInline(text) === extractPhone(text));
-  const birthIndex = emailIndex > 0 && extractFixedLayoutBirth(blocks[emailIndex - 1]) ? emailIndex - 1 : -1;
-  if (birthIndex < 2 || emailIndex <= birthIndex || phoneIndex <= emailIndex || phoneIndex - birthIndex > 3) return null;
+  const getPlaceholderRecordIndex = (placeholderIndex) =>
+    shapeRecords.findIndex((record) => record.placeholderIndex === placeholderIndex);
 
-  const affiliationIndex = birthIndex - 2;
-  const expertiseIndex = birthIndex - 1;
-  const affiliation = sanitizeAffiliation(blocks[affiliationIndex]);
+  const emailIndex = hasFixedProfileSlots
+    ? getPlaceholderRecordIndex(28)
+    : blocks.findIndex((text) => Boolean(extractEmail(text)) && cleanInline(text) === extractEmail(text));
+  const phoneIndex = hasFixedProfileSlots
+    ? getPlaceholderRecordIndex(29)
+    : blocks.findIndex((text) => Boolean(extractPhone(text)) && cleanInline(text) === extractPhone(text));
+  const birthIndex = hasFixedProfileSlots
+    ? getPlaceholderRecordIndex(27)
+    : emailIndex > 0 && extractFixedLayoutBirth(blocks[emailIndex - 1]) ? emailIndex - 1 : -1;
+  if (!hasFixedProfileSlots && (birthIndex < 2 || emailIndex <= birthIndex || phoneIndex <= emailIndex || phoneIndex - birthIndex > 3)) return null;
+
+  const affiliationIndex = hasFixedProfileSlots ? getPlaceholderRecordIndex(25) : birthIndex - 2;
+  const expertiseIndex = hasFixedProfileSlots ? getPlaceholderRecordIndex(26) : birthIndex - 1;
+  const affiliation = sanitizeAffiliation(blocks[affiliationIndex]) ||
+    (hasFixedProfileSlots ? cleanInline(blocks[affiliationIndex]) : '');
   let expertise = cleanInline(blocks[expertiseIndex]);
   if (
     affiliation.length > 70 || AFFILIATION_HEADER_NOISE_PATTERN.test(affiliation) ||
-    AFFILIATION_FALSE_EDUCATION_PATTERN.test(affiliation) || extractEmail(affiliation) || extractPhone(affiliation) ||
+    (!hasFixedProfileSlots && AFFILIATION_FALSE_EDUCATION_PATTERN.test(affiliation)) ||
+    extractEmail(affiliation) || extractPhone(affiliation) ||
     extractEmail(expertise) || extractPhone(expertise)
   ) return null;
 
@@ -1819,13 +1835,13 @@ const getFixedLayoutProfile = (shapeInputs = []) => {
   const educationSlots = [null, null, null];
   let educationDegreeConflict = false;
   shapeRecords.forEach((record, index) => {
-    if (index <= phoneIndex || excludedIndexes.has(index)) return;
+    const hasSlotMetadata = FIXED_LAYOUT_EDUCATION_PLACEHOLDERS.has(record.placeholderIndex) ||
+      (Number.isFinite(record.x) && Number.isFinite(record.y) && record.y >= 1650000 && record.y <= 2250000);
+    if ((!hasSlotMetadata && index <= phoneIndex) || excludedIndexes.has(index)) return;
     const slot = getFixedLayoutEducationSlot(record, index, phoneIndex);
     if (slot < 0) return;
 
     const value = cleanFixedLayoutEducationValue(record.text);
-    const hasSlotMetadata = FIXED_LAYOUT_EDUCATION_PLACEHOLDERS.has(record.placeholderIndex) ||
-      (Number.isFinite(record.x) && Number.isFinite(record.y) && record.y >= 1650000 && record.y <= 2250000);
     if (hasSlotMetadata) excludedIndexes.add(index);
     if (!value) return;
 
@@ -1833,6 +1849,14 @@ const getFixedLayoutProfile = (shapeInputs = []) => {
     educationDegreeConflict ||= hasFixedLayoutEducationConflict(label, value);
     educationSlots[slot] = educationSlots[slot] ? `${educationSlots[slot]} / ${value}` : value;
     excludedIndexes.add(index);
+  });
+  educationSlots.forEach((value, slot) => {
+    if (!value) return;
+    const explicitSlot = FIXED_LAYOUT_EDUCATION_LABELS.findIndex((label) => value.includes(label));
+    if (explicitSlot < 0 || explicitSlot === slot) return;
+    if (cleanInline(educationSlots[explicitSlot]) === cleanInline(value)) {
+      educationSlots[slot] = null;
+    }
   });
   const educationList = educationSlots
     .map((value, slot) => value ? `[${FIXED_LAYOUT_EDUCATION_LABELS[slot]}] ${value}` : '')
@@ -1864,7 +1888,7 @@ const getFixedLayoutProfile = (shapeInputs = []) => {
       /면접\s*(?:평가|심사|전형)/.test(text))?.text || '';
   }
 
-  if (documentScreening && documentScreening === interviewScreening) {
+  if (!hasFixedProfileSlots && documentScreening && documentScreening === interviewScreening) {
     documentScreening = '';
     interviewScreening = '';
   }
@@ -2012,7 +2036,7 @@ export const createEmptyProfile = (fileName = '') => ({
   error: false,
 });
 
-export const parsePptxProfileInput = async (input, fileName = '') => {
+export const parsePptxProfileInput = async (input, fileName = '', sourcePath = fileName) => {
   const fallback = createEmptyProfile(fileName);
 
   try {
@@ -2034,6 +2058,7 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
     row.gender = firstNonEmpty(
       findLabeledValue(allNodes, FIELD_LABELS.gender, { lookAhead: 8, validator: extractGender }),
       extractGender(allText),
+      extractGenderFromFileName(sourcePath),
       extractGenderFromFileName(fileName),
       EMPTY_VALUE
     );
@@ -2179,8 +2204,8 @@ export const parsePptxProfileInput = async (input, fileName = '') => {
   }
 };
 
-export const parsePptxProfile = async (file) => {
-  return parsePptxProfileInput(file, file?.name || '');
+export const parsePptxProfile = async (file, sourcePath = '') => {
+  return parsePptxProfileInput(file, file?.name || '', sourcePath || file?.webkitRelativePath || file?.name || '');
 };
 
 export const __testing = {

@@ -447,7 +447,7 @@ const main = async () => {
   const rows = [];
 
   for (const item of selectedInputs) {
-    const parsed = await parsePptxProfileInput(item.buffer, item.fileName);
+    const parsed = await parsePptxProfileInput(item.buffer, item.fileName, item.sourceRelativePath);
     rows.push({
       ...parsed,
       sourceRelativePath: item.sourceRelativePath,

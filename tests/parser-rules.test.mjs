@@ -31,6 +31,8 @@ test('extractGender ignores 남/여 choice templates', () => {
 test('extractGenderFromFileName reads delimited gender markers only', () => {
   assert.equal(__testing.extractGenderFromFileName('이상훈 프로필_HR_5월 7일_남.pptx'), '남');
   assert.equal(__testing.extractGenderFromFileName('이다솜_프로필_IT_5월 6일_여.pptx'), '여');
+  assert.equal(__testing.extractGenderFromFileName('승무/남/박두호 프로필.pptx'), '남');
+  assert.equal(__testing.extractGenderFromFileName('HR\\여\\김은주 프로필.pptx'), '여');
   assert.equal(__testing.extractGenderFromFileName('남기정 프로필.pptx'), '');
 });
 
@@ -481,6 +483,31 @@ test('getFixedLayoutProfile flags source text that conflicts with its fixed degr
   assert.deepEqual(profile.educationList, ['[학사] 인지대학교 영어영문학 석사']);
 });
 
+test('getFixedLayoutProfile drops an exact lower-slot duplicate when its explicit degree has a matching slot', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    { text: '김구영', placeholderIndex: 11 },
+    { text: '現) 에스트랜스 종합상황처장', placeholderIndex: 20 },
+    { text: '한국철도공사', placeholderIndex: 21 },
+    { text: '', placeholderIndex: 22 },
+    { text: '한국철도공사 면접위원', placeholderIndex: 23 },
+    { text: '', placeholderIndex: 24 },
+    { text: '에스트랜스 종합상황처장', placeholderIndex: 25 },
+    { text: '철도승무, 관제', placeholderIndex: 26 },
+    { text: '1967년 3월 8일', placeholderIndex: 27 },
+    { text: 'person@example.com', placeholderIndex: 28 },
+    { text: '010-3352-6458', placeholderIndex: 29 },
+    { text: '한국교통대 교통대학원 교통시스템공학 박사', placeholderIndex: 30 },
+    { text: '서울시립대 도시과학대학원 방재공학석사', placeholderIndex: 31 },
+    { text: '한국교통대 교통대학원 교통시스템공학 박사', placeholderIndex: 32 },
+  ]);
+
+  assert.equal(profile.educationDegreeConflict, true);
+  assert.deepEqual(profile.educationList, [
+    '[석사] 서울시립대 도시과학대학원 방재공학석사',
+    '[박사] 한국교통대 교통대학원 교통시스템공학 박사',
+  ]);
+});
+
 test('getFixedLayoutProfile reads career and evaluation from fixed template slots', () => {
   const profile = __testing.getFixedLayoutProfile([
     { text: '심영재' },
@@ -499,6 +526,62 @@ test('getFixedLayoutProfile reads career and evaluation from fixed template slot
 
   assert.match(profile.careerBlock, /케이티피씨 대표/);
   assert.equal(profile.evaluationRaw, '[서류] 금융감독원, KDB산업은행\n[면접] 한국증권금융, KB국민은행');
+});
+
+test('getFixedLayoutProfile trusts complete placeholder slots with noisy or missing contact values', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    { text: '박두호', placeholderIndex: 11 },
+    { text: '現) 한국철도물류협회 상임부회장 (2023년~현재)', placeholderIndex: 20 },
+    { text: '인천교통공사', placeholderIndex: 21 },
+    { text: '철도교통안전관리자', placeholderIndex: 22 },
+    { text: '한국철도공사 신규직원 채용 실기 평가', placeholderIndex: 23 },
+    { text: '', placeholderIndex: 24 },
+    { text: '(사)한국철도물류협회 상임부회장', placeholderIndex: 25 },
+    { text: '인재선발, 전문면접관, 서류평가', placeholderIndex: 26 },
+    { text: '1966.년 3월 8일', placeholderIndex: 27 },
+    { text: 'ktx369369@naver.com/', placeholderIndex: 28 },
+    { text: '', placeholderIndex: 29 },
+    { text: '명지전문대 사회교육과\n방송대 법학과', placeholderIndex: 30 },
+    { text: '성균관대학교 행정대학원', placeholderIndex: 31 },
+    { text: '우송대학교 일반대학원 공학박사', placeholderIndex: 32 },
+  ]);
+
+  assert.equal(profile.birth, '1966.03.08');
+  assert.equal(profile.phone, '');
+  assert.equal(profile.email, 'ktx369369@naver.com');
+  assert.equal(profile.affiliation, '(사)한국철도물류협회 상임부회장');
+  assert.deepEqual(profile.educationList, [
+    '[학사] 명지전문대 사회교육과 / 방송대 법학과',
+    '[석사] 성균관대학교 행정대학원',
+    '[박사] 우송대학교 일반대학원 공학박사',
+  ]);
+  assert.equal(profile.evaluationRaw, '[서류] 인천교통공사\n[면접] 한국철도공사 신규직원 채용 실기 평가');
+});
+
+test('getFixedLayoutProfile preserves university departments in explicit affiliation slots', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    { text: '최기찬', placeholderIndex: 11 },
+    { text: '現) 우송정보대학 철도차량운전과 교수 (2021년~현재)\n前) 코레일테크 전문분야 서류 심사', placeholderIndex: 20 },
+    { text: '서울교통공사', placeholderIndex: 21 },
+    { text: '', placeholderIndex: 22 },
+    { text: '한국철도공사', placeholderIndex: 23 },
+    { text: '', placeholderIndex: 24 },
+    { text: '우송정보대학\n철도차량운전과', placeholderIndex: 25 },
+    { text: '철도운전, 관제 등 운영분야', placeholderIndex: 26 },
+    { text: '1961.03.29.', placeholderIndex: 27 },
+    { text: 'person@example.com', placeholderIndex: 28 },
+    { text: '010-7668-3548', placeholderIndex: 29 },
+    { text: '방송통신대학교', placeholderIndex: 30 },
+    { text: '한국교통대학교 대학원', placeholderIndex: 31 },
+    { text: '', placeholderIndex: 32 },
+  ]);
+
+  assert.equal(profile.affiliation, '우송정보대학 철도차량운전과');
+  assert.equal(profile.birth, '1961.03.29');
+  assert.deepEqual(profile.educationList, [
+    '[학사] 방송통신대학교',
+    '[석사] 한국교통대학교 대학원',
+  ]);
 });
 
 test('getFixedLayoutProfile does not replace fixed evaluation slots with other achievements', () => {
@@ -522,6 +605,25 @@ test('getFixedLayoutProfile does not replace fixed evaluation slots with other a
     '[서류] 정보통신기획평가원, 국민건강보험공단\n[면접] 한국해양수산연수원, 국립해양생물자원관'
   );
   assert.doesNotMatch(profile.evaluationRaw, /서울대학교/);
+});
+
+test('getFixedLayoutProfile preserves the same organization in separate explicit evaluation slots', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    { text: '권은영', placeholderIndex: 11 },
+    { text: '現) 한국철도공사 일산승무사업소 부소장', placeholderIndex: 20 },
+    { text: '한국철도공사', placeholderIndex: 21 },
+    { text: '철도운송산업기사', placeholderIndex: 22 },
+    { text: '한국철도공사', placeholderIndex: 23 },
+    { text: '', placeholderIndex: 24 },
+    { text: '한국철도공사 일산승무사업소 부소장', placeholderIndex: 25 },
+    { text: '열차승무', placeholderIndex: 26 },
+    { text: '1973년 1월 5일', placeholderIndex: 27 },
+    { text: 'person@example.com', placeholderIndex: 28 },
+    { text: '010-5054-6887', placeholderIndex: 29 },
+    { text: '숭의여자대학 관광경영과', placeholderIndex: 30 },
+  ]);
+
+  assert.equal(profile.evaluationRaw, '[서류] 한국철도공사\n[면접] 한국철도공사');
 });
 
 test('getFixedLayoutProfile reads manually positioned replacements for empty evaluation slots', () => {
