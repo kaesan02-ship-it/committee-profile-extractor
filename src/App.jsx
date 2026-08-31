@@ -358,13 +358,12 @@ const buildWorkbook = async (files, results) => {
     { header: '현재 소속', key: 'currentAffiliation', width: 34 },
     { header: '이전 경력', key: 'previousCareer', width: 42 },
     { header: '채용 관련 활동 경험', key: 'recruitmentExperience', width: 54 },
-    { header: '나이', key: 'age', width: 10 },
+    { header: '생년월일', key: 'birth', width: 16 },
     { header: 'IBK참여이력', key: 'ibkHistory', width: 18 },
     { header: '연락처', key: 'phone', width: 18 },
   ];
 
   results.forEach((row, index) => {
-    const age = formatAgeForTemplate(row.age);
     const inserted = ibkSheet.addRow({
       no: index + 1,
       field: '',
@@ -375,7 +374,7 @@ const buildWorkbook = async (files, results) => {
       currentAffiliation: formatIbkCurrentAffiliation(row),
       previousCareer: formatIbkPreviousCareer(row),
       recruitmentExperience: formatEvaluationCareerForTemplate(row),
-      age: age ? Number(age) : '',
+      birth: row.birth === EMPTY_VALUE ? '' : formatBirthForTemplate(row.birth),
       ibkHistory: '',
       phone: row.phone === EMPTY_VALUE ? '' : row.phone,
     });
@@ -387,7 +386,7 @@ const buildWorkbook = async (files, results) => {
   });
 
   applySheetStyle(ibkSheet, { headerColor: '2E3440' });
-  ['no', 'field', 'name', 'selected', 'gender', 'age', 'ibkHistory', 'phone'].forEach((key) => {
+  ['no', 'field', 'name', 'selected', 'gender', 'birth', 'ibkHistory', 'phone'].forEach((key) => {
     ibkSheet.getColumn(key).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
   });
 
