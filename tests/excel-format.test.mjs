@@ -3,7 +3,29 @@ import assert from 'node:assert/strict';
 import {
   formatCareerForTemplate,
   formatEvaluationCareerForTemplate,
+  formatIbkCurrentAffiliation,
+  formatIbkPreviousCareer,
 } from '../src/lib/profileExcelFormatter.js';
+
+test('IBK career fields keep the current affiliation and latest previous workplace with position', () => {
+  const row = {
+    affiliation: '두배러컨설팅 대표',
+    careerDetails: '現) 두배러컨설팅 대표 (2021.03~현재) 前) 한국콘텐츠진흥원 채용센터 부센터장 (2017.01~2021.02) 前) 한국기업교육원 팀장 (2012.01~2016.12)',
+  };
+
+  assert.equal(formatIbkCurrentAffiliation(row), '두배러컨설팅 대표');
+  assert.equal(formatIbkPreviousCareer(row), '한국콘텐츠진흥원 채용센터 부센터장');
+});
+
+test('IBK current affiliation falls back to the explicit current career only', () => {
+  const row = {
+    affiliation: '미상',
+    careerDetails: '(2024.01~현재) 신용보증기금 광화문지점 부지점장 (2018.01~2023.12) 신용보증기금 정보시스템부 팀장',
+  };
+
+  assert.equal(formatIbkCurrentAffiliation(row), '신용보증기금 광화문지점 부지점장');
+  assert.equal(formatIbkPreviousCareer(row), '신용보증기금 정보시스템부 팀장');
+});
 
 test('formatCareerForTemplate splits spaced current date markers', () => {
   const formatted = formatCareerForTemplate({

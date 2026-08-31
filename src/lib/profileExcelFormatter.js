@@ -208,6 +208,27 @@ export const formatCareerForTemplate = (row = {}) => {
   return unique(lines).slice(0, 4).join('\n');
 };
 
+const stripIbkCareerMeta = (value = '') => cleanupEntry(value)
+  .replace(/^(?:現|前|현재|현|전)\s*[).:：-]?\s*/i, '')
+  .replace(new RegExp(CAREER_DATE_RANGE_SOURCE, 'g'), ' ')
+  .replace(/\(\s*\)/g, ' ')
+  .replace(/\s{2,}/g, ' ')
+  .trim();
+
+export const formatIbkCurrentAffiliation = (row = {}) => {
+  if (!isEmptyValue(row.affiliation)) return cleanupEntry(row.affiliation);
+
+  const currentLine = toLines(formatCareerForTemplate(row))
+    .find((line) => /^現\)/.test(line));
+  return currentLine ? stripIbkCareerMeta(currentLine) : '';
+};
+
+export const formatIbkPreviousCareer = (row = {}) => {
+  const previousLine = toLines(formatCareerForTemplate(row))
+    .find((line) => /^前\)/.test(line));
+  return previousLine ? stripIbkCareerMeta(previousLine) : '';
+};
+
 const trimRepeatedEvaluationProjectBlock = (value = '') => {
   const source = String(value ?? '');
   const seen = new Set();

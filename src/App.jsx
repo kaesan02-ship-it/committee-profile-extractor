@@ -6,6 +6,8 @@ import {
   formatCareerForTemplate,
   formatEducationForTemplate,
   formatEvaluationCareerForTemplate,
+  formatIbkCurrentAffiliation,
+  formatIbkPreviousCareer,
 } from './lib/profileExcelFormatter';
 
 const normalizeRelativePath = (relativePath = '', fallbackName = '') => {
@@ -344,6 +346,50 @@ const buildWorkbook = async (files, results) => {
     row.height = rowNumber <= 3 ? 48 : 72;
   });
   applySheetStyle(formatSheet, { headerColor: '4C4F57' });
+
+  const ibkSheet = workbook.addWorksheet('5.IBK기업은행');
+  ibkSheet.columns = [
+    { header: '연번', key: 'no', width: 8 },
+    { header: '분야', key: 'field', width: 14 },
+    { header: '성명', key: 'name', width: 14 },
+    { header: '선정', key: 'selected', width: 10 },
+    { header: '성별', key: 'gender', width: 10 },
+    { header: '최종학력(전공)', key: 'education', width: 36 },
+    { header: '현재 소속', key: 'currentAffiliation', width: 34 },
+    { header: '이전 경력', key: 'previousCareer', width: 42 },
+    { header: '채용 관련 활동 경험', key: 'recruitmentExperience', width: 54 },
+    { header: '나이', key: 'age', width: 10 },
+    { header: 'IBK참여이력', key: 'ibkHistory', width: 18 },
+    { header: '연락처', key: 'phone', width: 18 },
+  ];
+
+  results.forEach((row, index) => {
+    const age = formatAgeForTemplate(row.age);
+    const inserted = ibkSheet.addRow({
+      no: index + 1,
+      field: '',
+      name: row.name === EMPTY_VALUE ? '' : row.name,
+      selected: '',
+      gender: row.gender === EMPTY_VALUE ? '' : row.gender,
+      education: row.education === EMPTY_VALUE ? '' : row.education,
+      currentAffiliation: formatIbkCurrentAffiliation(row),
+      previousCareer: formatIbkPreviousCareer(row),
+      recruitmentExperience: formatEvaluationCareerForTemplate(row),
+      age: age ? Number(age) : '',
+      ibkHistory: '',
+      phone: row.phone === EMPTY_VALUE ? '' : row.phone,
+    });
+
+    inserted.height = Math.min(
+      120,
+      30 + (getLineCount(inserted.getCell('recruitmentExperience').value) - 1) * 18
+    );
+  });
+
+  applySheetStyle(ibkSheet, { headerColor: '2E3440' });
+  ['no', 'field', 'name', 'selected', 'gender', 'age', 'ibkHistory', 'phone'].forEach((key) => {
+    ibkSheet.getColumn(key).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+  });
 
   return workbook;
 };
