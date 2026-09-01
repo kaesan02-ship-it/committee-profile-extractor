@@ -483,6 +483,35 @@ test('getFixedLayoutProfile flags source text that conflicts with its fixed degr
   assert.deepEqual(profile.educationList, ['[학사] 인지대학교 영어영문학 석사']);
 });
 
+test('getFixedLayoutProfile treats explicit combined master-doctor text as doctorate', () => {
+  const profile = __testing.getFixedLayoutProfile([
+    { text: '신보영', placeholderIndex: 11 },
+    { text: '現) 유아굿심리상담센터장 (2018년~현재)', placeholderIndex: 20 },
+    { text: '한국법무보훈복지공단', placeholderIndex: 21 },
+    { text: '', placeholderIndex: 22 },
+    { text: '서울의료원', placeholderIndex: 23 },
+    { text: '', placeholderIndex: 24 },
+    { text: '유아굿심리상담센터장', placeholderIndex: 25 },
+    { text: '심리, 상담', placeholderIndex: 26 },
+    { text: '1986년 2월 4일', placeholderIndex: 27 },
+    { text: 'person@example.com', placeholderIndex: 28 },
+    { text: '010-8670-7780', placeholderIndex: 29 },
+    { text: '가천대학교 물리학', placeholderIndex: 30 },
+    { text: '숙명여대 임상음악치료\n석박사', placeholderIndex: 31 },
+    { text: '', placeholderIndex: 32 },
+  ]);
+
+  assert.equal(profile.educationDegreeConflict, false);
+  assert.deepEqual(profile.educationList, [
+    '[학사] 가천대학교 물리학',
+    '[박사] 숙명여대 임상음악치료 석박사',
+  ]);
+  assert.equal(
+    __testing.extractHighestEducation(profile.educationList),
+    '[박사] 숙명여대 임상음악치료 석박사'
+  );
+});
+
 test('getFixedLayoutProfile drops an exact lower-slot duplicate when its explicit degree has a matching slot', () => {
   const profile = __testing.getFixedLayoutProfile([
     { text: '김구영', placeholderIndex: 11 },

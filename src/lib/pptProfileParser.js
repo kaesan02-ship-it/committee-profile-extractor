@@ -1683,6 +1683,7 @@ const FIXED_LAYOUT_BIRTH_PATTERN = /^\s*(\d{2}|(?:19|20)\d{2})\s*(?:년|[./-])\s
 const FIXED_LAYOUT_QUALIFICATION_PATTERN = /(?:자격|교육\s*이수|과정\s*이수|논문|저서|학위|박사|석사|학사)/;
 const FIXED_LAYOUT_CAREER_PATTERN = /(?:^|\s)(?:現|前|현|전)\s*[).:：]/;
 const FIXED_LAYOUT_EDUCATION_LABELS = ['학사', '석사', '박사'];
+const FIXED_LAYOUT_COMBINED_DOCTORATE_PATTERN = /석\s*(?:[·ㆍ/]\s*)?박사/i;
 const FIXED_LAYOUT_EDUCATION_PLACEHOLDERS = new Map([[30, 0], [31, 1], [32, 2]]);
 const FIXED_LAYOUT_EDUCATION_NOISE_PATTERN = /(?:경력|수행실적|주요이력|자격|수상|저서|논문|강사|면접|서류|심사|평가)/;
 const FIXED_LAYOUT_EDUCATION_INSTITUTION_PATTERN = /(?:대학교|대학원|대학|(?:^|\s)[가-힣]{2,15}(?:전문대|방송대|외대|교대|예대|과기대|산업대|시립대|여대|대)(?=\s|$)|University|College|KAIST|POSTECH|학점은행제|평생교육진흥원)/i;
@@ -1745,6 +1746,11 @@ const hasFixedLayoutEducationConflict = (label, value) => {
   const explicitDegrees = FIXED_LAYOUT_EDUCATION_LABELS.filter((degree) => value.includes(degree));
   return explicitDegrees.length > 0 && !explicitDegrees.includes(label);
 };
+
+const getFixedLayoutEducationLabel = (slot, value = '') =>
+  FIXED_LAYOUT_COMBINED_DOCTORATE_PATTERN.test(value)
+    ? '박사'
+    : FIXED_LAYOUT_EDUCATION_LABELS[slot];
 
 const extractFixedLayoutBirth = (text = '') => {
   const normalized = String(text).replace(/((?:19|20)?\d{2})\.\s*년/u, '$1년');
@@ -1845,7 +1851,7 @@ const getFixedLayoutProfile = (shapeInputs = []) => {
     if (hasSlotMetadata) excludedIndexes.add(index);
     if (!value) return;
 
-    const label = FIXED_LAYOUT_EDUCATION_LABELS[slot];
+    const label = getFixedLayoutEducationLabel(slot, value);
     educationDegreeConflict ||= hasFixedLayoutEducationConflict(label, value);
     educationSlots[slot] = educationSlots[slot] ? `${educationSlots[slot]} / ${value}` : value;
     excludedIndexes.add(index);
@@ -1859,7 +1865,7 @@ const getFixedLayoutProfile = (shapeInputs = []) => {
     }
   });
   const educationList = educationSlots
-    .map((value, slot) => value ? `[${FIXED_LAYOUT_EDUCATION_LABELS[slot]}] ${value}` : '')
+    .map((value, slot) => value ? `[${getFixedLayoutEducationLabel(slot, value)}] ${value}` : '')
     .filter(Boolean);
 
   if (!expertise) {
