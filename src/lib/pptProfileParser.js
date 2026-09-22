@@ -1611,7 +1611,8 @@ const buildHeaderPattern = (headers = []) => {
     .join('|');
 };
 
-const findSectionBody = (allText, headers = [], stopHeaders = []) => {
+const findSectionBody = (allText, headers = [], stopHeaders = [], options = {}) => {
+  const { minLength = 3 } = options;
   const stopPattern = buildHeaderPattern(stopHeaders);
 
   for (const header of headers) {
@@ -1621,7 +1622,7 @@ const findSectionBody = (allText, headers = [], stopHeaders = []) => {
       'i'
     );
     const match = allText.match(regex);
-    if (match?.[1] && cleanInline(match[1]).length > 2) return decodeHTML(match[1]).trim();
+    if (match?.[1] && cleanInline(match[1]).length >= minLength) return decodeHTML(match[1]).trim();
   }
 
   return '';
@@ -2152,7 +2153,7 @@ export const parsePptxProfileInput = async (input, fileName = '', sourcePath = f
     );
 
     const expertiseBody = firstNonEmpty(
-      findSectionBody(allText, FIELD_LABELS.expertise, SECTION_STOP_HEADERS.expertise),
+      findSectionBody(allText, FIELD_LABELS.expertise, SECTION_STOP_HEADERS.expertise, { minLength: 2 }),
       findLabeledValue(allNodes, FIELD_LABELS.expertise, { lookAhead: 10, validator: cleanInline })
     );
     row.expertise = firstNonEmpty(extractExpertise(expertiseBody), EMPTY_VALUE);

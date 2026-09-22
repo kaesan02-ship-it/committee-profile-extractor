@@ -289,6 +289,21 @@ test('findSectionBody matches nested performance section headers instead of pare
   );
 });
 
+test('findSectionBody keeps two-character expertise values without spilling into later sections', () => {
+  const text = [
+    '전  문  분 야',
+    '화학',
+    '학 력',
+    '고려대학교 화학 학사',
+    '경력사항 및 수행실적',
+  ].join('\n');
+
+  assert.equal(
+    __testing.findSectionBody(text, ['전문분야'], ['학력', '경력사항'], { minLength: 2 }),
+    '화학'
+  );
+});
+
 test('chooseAffiliation keeps current-career position when explicit affiliation is organization-only', () => {
   assert.equal(
     __testing.chooseAffiliation(
