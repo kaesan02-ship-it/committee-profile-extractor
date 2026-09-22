@@ -59,6 +59,25 @@ test('sanitizeAffiliation keeps Jeon-prefixed university names', () => {
   assert.equal(__testing.sanitizeAffiliation('전 한국대학교 연구원'), '한국대학교연구원');
 });
 
+test('splitCareerEntries preserves paragraph-separated single-date career items', () => {
+  assert.deepEqual(
+    __testing.splitCareerEntries([
+      '1997. 8 - 1999. 2 Harvard University Post-doctoral Fellow',
+      '2008. 세종대학교 화학과 교수',
+      "2007 Marquis who's who 등재",
+      '2009 대한화학회 홍보이사',
+      '2018 자연과학대학 학장',
+    ].join('\n')),
+    [
+      '1997. 8 - 1999. 2 Harvard University Post-doctoral Fellow',
+      '2008. 세종대학교 화학과 교수',
+      "2007 Marquis who's who 등재",
+      '2009 대한화학회 홍보이사',
+      '2018 자연과학대학 학장',
+    ]
+  );
+});
+
 test('splitEducationRecords removes combined mixed-degree fallback records', () => {
   const records = __testing.splitEducationRecords('한국외국어대학교 이란어 / 경영학 (부) 학사 한양사이버대학원 IT MBA 석사');
 

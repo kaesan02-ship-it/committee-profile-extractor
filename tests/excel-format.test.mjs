@@ -86,6 +86,26 @@ test('formatCareerForTemplate splits spaced current date markers', () => {
   ].join('\n'));
 });
 
+test('formatCareerForTemplate does not invent previous status for single-date career items', () => {
+  const formatted = formatCareerForTemplate({
+    affiliation: '세종대학교',
+    careerDetails: [
+      '1997. 8 - 1999. 2 Harvard University Post-doctoral Fellow',
+      '2008. 세종대학교 화학과 교수',
+      "2007 Marquis who's who 등재",
+      '2009 대한화학회 홍보이사',
+      '2018 자연과학대학 학장',
+    ].join('\n'),
+  });
+
+  assert.equal(formatted, [
+    '現) 세종대학교',
+    '前) 1997. 8-1999. 2 Harvard University Post-doctoral Fellow',
+    '2008. 세종대학교 화학과 교수',
+    "2007 Marquis who's who 등재",
+  ].join('\n'));
+});
+
 test('formatCareerForTemplate keeps trailing date ranges with their career entry', () => {
   assert.equal(
     formatCareerForTemplate({

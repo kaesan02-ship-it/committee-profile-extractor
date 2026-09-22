@@ -36,6 +36,7 @@ const EDUCATION_KEYWORD_PATTERN = /(학사|석사|박사|전문학사|대학교|
 const CAREER_SECTION_LINE_PATTERN = /(경력|이력|재직|근무|수행|프로젝트|담당|위원|심사|평가)/;
 const EXPERTISE_LABEL_PATTERN = /^(?:전문분야|전\s*문\s*분야|전문\s*분야|전문\s*산업분야|전문\s*직무분야|주요분야|전공|핵심역량)\s*[:：]?/;
 const OPEN_ENDED_CAREER_PATTERN = /(?:^|\(|\s)\d{4}(?:[.]\d{1,2})?\.?(?:\s*년(?:\s*\d{1,2}\s*월)?)?\s*[~∼〜-]\s*(?:현재)?(?:\)|\s|$)/;
+const SINGLE_DATE_CAREER_START_PATTERN = /^(?:19|20)\d{2}(?:\s*[.]\s*\d{1,2})?\s*[.]?(?=\s+\S)/;
 const TOKEN_PLACEHOLDER = '__SLASH__';
 
 const decodeHTML = (text = '') => {
@@ -1368,15 +1369,18 @@ const normalizeCareerLine = (line = '') => {
 
 const isCareerStart = (line = '') => {
   const value = normalizeCareerLine(line);
-  return CAREER_START_PATTERN.test(value) || (hasAffiliationHint(value) && hasPosition(value));
+  return CAREER_START_PATTERN.test(value) ||
+    SINGLE_DATE_CAREER_START_PATTERN.test(value) ||
+    (hasAffiliationHint(value) && hasPosition(value));
 };
 
 const splitCareerEntries = (text = '') => {
-  const rawLines = sanitizeBracketArtifacts(text)
+  const rawLines = String(text ?? '')
+    .replace(/\r\n?/g, '\n')
     .replace(/\s*[•■□▷▶*]+\s*/g, '\n')
     .replace(/(?:^|\n)\s*[－─]\s*/g, '\n')
     .split(/\n+/)
-    .map((line) => normalizeCareerLine(line))
+    .map((line) => normalizeCareerLine(sanitizeBracketArtifacts(line)))
     .filter(Boolean);
 
   const entries = [];
@@ -2231,6 +2235,7 @@ export const __testing = {
   getFixedLayoutProfile,
   isProfileFormatAnomaly,
   sanitizeAffiliation,
+  splitCareerEntries,
   splitEducationRecords,
   tagSuspiciousProfile,
 };

@@ -152,6 +152,7 @@ const splitCareerEntries = (value = '') => {
 };
 
 const hasCurrentMarker = (line = '') => /^(?:現\s*[).:：-]?|현재\s*(?:[).:：-]|\s)|현\s*(?:[).:：-]|\s))|[~∼〜-]\s*(?:현재|現)(?:\)|\s|$)/.test(line);
+const hasPreviousMarker = (line = '') => /^(?:前\s*[).:：-]?|전\s*(?:[).:：-]|\s))/.test(line);
 
 const normalizeCareerLine = (line = '', fallbackPrefix = '前') => {
   const cleaned = stripEvaluationNoise(line);
@@ -166,7 +167,7 @@ const normalizeCareerLine = (line = '', fallbackPrefix = '前') => {
   }
 
   if (hasCurrentMarker(cleaned)) return `現) ${cleaned}`;
-  return `${fallbackPrefix}) ${cleaned}`;
+  return fallbackPrefix ? `${fallbackPrefix}) ${cleaned}` : cleaned;
 };
 
 const isCareerSummaryNoiseLine = (line = '') => {
@@ -202,7 +203,9 @@ export const formatCareerForTemplate = (row = {}) => {
   }
 
   previousLines.slice(0, 3).forEach((line) => {
-    lines.push(normalizeCareerLine(line, '前'));
+    const supportsPreviousStatus = hasPreviousMarker(line) ||
+      (CAREER_DATE_RANGE_REGEX.test(line) && !hasCurrentMarker(line));
+    lines.push(normalizeCareerLine(line, supportsPreviousStatus ? '前' : ''));
   });
 
   return unique(lines).slice(0, 4).join('\n');
