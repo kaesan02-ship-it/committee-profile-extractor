@@ -47,8 +47,9 @@ const ibkColumns = [
 const applySheetStyle = (sheet, { headerColor, bodyHeight, leftAligned }) => {
   const borderEdge = { style: 'thin', color: { indexed: 64 } };
   const border = { top: borderEdge, bottom: borderEdge, left: borderEdge, right: borderEdge };
-  const headerFont = { name: '맑은 고딕', size: 10, bold: true, color: { argb: 'FFFFFFFF' } };
-  const bodyFont = { name: '맑은 고딕', size: 10, color: { argb: 'FF000000' } };
+  const font = { name: 'Arial', size: 9 };
+  const headerFont = { ...font, bold: true, color: { argb: 'FFFFFFFF' } };
+  const bodyFont = { ...font, color: { argb: 'FF000000' } };
   const headerFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: headerColor } };
   const bodyFill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
   const center = { vertical: 'middle', horizontal: 'center', wrapText: true };

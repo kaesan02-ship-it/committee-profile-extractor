@@ -50,6 +50,10 @@ test('the downloaded workbook follows the two-sheet profile template', async () 
     assert.equal(sheet.autoFilter, 'A1:L1');
     assert.equal(sheet.getCell('A1').fill.fgColor.argb, headerColors[index]);
     assert.equal(sheet.getCell('A2').fill.fgColor.argb, 'FFFFFFFF');
+    for (const address of ['A1', 'A2', 'L41']) {
+      assert.equal(sheet.getCell(address).font.name, 'Arial');
+      assert.equal(sheet.getCell(address).font.size, 9);
+    }
     assert.ok((sheet.views ?? []).every(({ state }) => state !== 'frozen'));
   });
   for (const address of ['J2', 'K2', 'L2']) {
