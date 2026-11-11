@@ -2,13 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import JSZip from 'jszip';
 import { useDropzone } from 'react-dropzone';
 import { EMPTY_VALUE, parsePptxProfile } from './lib/pptProfileParser';
-import {
-  formatCareerForTemplate,
-  formatEducationForTemplate,
-  formatEvaluationCareerForTemplate,
-  formatIbkCurrentAffiliation,
-  formatIbkPreviousCareer,
-} from './lib/profileExcelFormatter';
+import { buildProfileWorkbook } from './lib/profileWorkbook.js';
 
 const normalizeRelativePath = (relativePath = '', fallbackName = '') => {
   const normalized = String(relativePath || '')
@@ -61,34 +55,6 @@ const bulletizeMultiline = (value = '') => {
     .join('\n');
 };
 
-const parseBirthParts = (birth = '') => {
-  const match = String(birth ?? '').match(/(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
-  if (!match) return null;
-  return {
-    year: match[1],
-    month: String(Number(match[2])),
-    day: String(Number(match[3])),
-  };
-};
-
-const formatBirthForTemplate = (birth = '') => {
-  const parts = parseBirthParts(birth);
-  if (!parts) return '';
-  return `${parts.year}년 ${parts.month}월 ${parts.day}일`;
-};
-
-const formatAgeForTemplate = (age = '') => {
-  const digits = String(age ?? '').replace(/\D/g, '');
-  return digits || '';
-};
-
-const getLineCount = (...values) => {
-  return Math.max(
-    1,
-    ...values.map((value) => String(value ?? '').split(/\n+/).filter(Boolean).length || 1)
-  );
-};
-
 const createStamp = () => {
   const now = new Date();
   const yyyy = now.getFullYear();
@@ -99,302 +65,8 @@ const createStamp = () => {
   return `${yyyy}-${mm}-${dd}_${hh}${mi}`;
 };
 
-const applySheetStyle = (worksheet, options = {}) => {
-  const {
-    headerColor = '1F4E78',
-  } = options;
-
-  worksheet.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: 1, column: worksheet.columnCount },
-  };
-
-  const headerRow = worksheet.getRow(1);
-  headerRow.height = 26;
-  headerRow.eachCell((cell) => {
-    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
-    cell.fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: headerColor },
-    };
-    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-    cell.border = {
-      top: { style: 'thin', color: { argb: 'FFD8E1EB' } },
-      left: { style: 'thin', color: { argb: 'FFD8E1EB' } },
-      right: { style: 'thin', color: { argb: 'FFD8E1EB' } },
-      bottom: { style: 'thin', color: { argb: 'FF9AA9B8' } },
-    };
-  });
-
-  worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return;
-
-    const isError = String(row.getCell(1).value || '').includes('오류');
-    const fillColor = isError
-      ? 'FFFDECEA'
-      : rowNumber % 2 === 0
-        ? 'FFF8FBFF'
-        : 'FFFFFFFF';
-
-    row.eachCell((cell) => {
-      cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: { argb: fillColor },
-      };
-      cell.border = {
-        top: { style: 'thin', color: { argb: 'FFE5ECF3' } },
-        left: { style: 'thin', color: { argb: 'FFE5ECF3' } },
-        right: { style: 'thin', color: { argb: 'FFE5ECF3' } },
-        bottom: { style: 'thin', color: { argb: 'FFE5ECF3' } },
-      };
-    });
-  });
-};
-
-const buildWorkbook = async (files, results) => {
-  const ExcelJSModule = await import('exceljs');
-  const ExcelJS = ExcelJSModule.default;
-  const workbook = new ExcelJS.Workbook();
-
-  workbook.creator = 'committee-profile-extractor';
-  workbook.created = new Date();
-  workbook.modified = new Date();
-
-  const dbSheet = workbook.addWorksheet('1.위원DB');
-  dbSheet.columns = [
-    { header: '상태', key: 'status', width: 10 },
-    { header: '파일명', key: 'fileName', width: 28 },
-    { header: '원본폴더', key: 'sourceFolder', width: 20 },
-    { header: '원본상대경로', key: 'sourceRelativePath', width: 42 },
-    { header: '검수태그', key: 'reviewTags', width: 34 },
-    { header: '위원 성명', key: 'name', width: 14 },
-    { header: '성별', key: 'gender', width: 10 },
-    { header: '출생년월일', key: 'birth', width: 16 },
-    { header: '연령', key: 'age', width: 10 },
-    { header: '현소속', key: 'affiliation', width: 28 },
-    { header: '연락처', key: 'phone', width: 18 },
-    { header: '이메일주소', key: 'email', width: 28 },
-    { header: '최종학력', key: 'education', width: 28 },
-    { header: '학력상세', key: 'educationDetails', width: 42 },
-    { header: '전문분야', key: 'expertise', width: 34 },
-    { header: '경력요약', key: 'career', width: 38 },
-    { header: '경력상세', key: 'careerDetails', width: 44 },
-  ];
-
-  results.forEach((row) => {
-    const inserted = dbSheet.addRow({
-      status: row.error ? '오류' : '정상',
-      fileName: normalizeText(row.fileName),
-      sourceFolder: normalizeText(row.sourceFolder),
-      sourceRelativePath: normalizeText(row.sourceRelativePath),
-      reviewTags: normalizeReviewTags(row.reviewTags),
-      name: normalizeText(row.name),
-      gender: normalizeText(row.gender),
-      birth: normalizeText(row.birth),
-      age: normalizeText(row.age),
-      affiliation: normalizeText(row.affiliation),
-      phone: normalizeText(row.phone),
-      email: normalizeText(row.email),
-      education: normalizeText(row.education),
-      educationDetails: bulletizeMultiline(row.educationDetails),
-      expertise: normalizeText(row.expertise),
-      career: bulletizeMultiline(row.career),
-      careerDetails: bulletizeMultiline(row.careerDetails),
-    });
-
-    inserted.height = Math.min(
-      180,
-      22 + (getLineCount(inserted.getCell('educationDetails').value, inserted.getCell('careerDetails').value) - 1) * 16
-    );
-  });
-
-  applySheetStyle(dbSheet, { headerColor: '1F4E78' });
-
-  const detailSheet = workbook.addWorksheet('2.원문정리');
-  detailSheet.columns = [
-    { header: '상태', key: 'status', width: 10 },
-    { header: '파일명', key: 'fileName', width: 28 },
-    { header: '성명', key: 'name', width: 14 },
-    { header: '학력 원문', key: 'educationRaw', width: 44 },
-    { header: '학력 정리', key: 'educationDetails', width: 42 },
-    { header: '경력 원문', key: 'careerRaw', width: 48 },
-    { header: '경력 정리', key: 'careerDetails', width: 44 },
-  ];
-
-  results.forEach((row) => {
-    const inserted = detailSheet.addRow({
-      status: row.error ? '오류' : '정상',
-      fileName: normalizeText(row.fileName),
-      name: normalizeText(row.name),
-      educationRaw: normalizeMultiline(row.educationRaw),
-      educationDetails: bulletizeMultiline(row.educationDetails),
-      careerRaw: normalizeMultiline(row.careerRaw),
-      careerDetails: bulletizeMultiline(row.careerDetails),
-    });
-
-    inserted.height = Math.min(
-      220,
-      24 + (getLineCount(
-        inserted.getCell('educationRaw').value,
-        inserted.getCell('educationDetails').value,
-        inserted.getCell('careerRaw').value,
-        inserted.getCell('careerDetails').value,
-      ) - 1) * 16
-    );
-  });
-
-  applySheetStyle(detailSheet, { headerColor: '2F6B3C' });
-
-  const summarySheet = workbook.addWorksheet('3.요약');
-  summarySheet.columns = [
-    { header: '항목', key: 'label', width: 24 },
-    { header: '값', key: 'value', width: 42 },
-  ];
-
-  const summaryRows = [
-    { label: '총 파일 수', value: files.length },
-    { label: '정상 추출 수', value: results.filter((row) => !row.error).length },
-    { label: '오류 수', value: results.filter((row) => row.error).length },
-    { label: '검수 필요 수', value: results.filter((row) => row.reviewTags?.length).length },
-    { label: '검수 태그', value: normalizeReviewTags([...new Set(results.flatMap((row) => row.reviewTags || []))]) },
-    { label: '생성일시', value: new Date().toLocaleString('ko-KR') },
-    { label: '서식 메모', value: '학력상세/경력상세는 줄바꿈 + 글머리표로 저장됩니다.' },
-  ];
-
-  summaryRows.forEach((item) => summarySheet.addRow(item));
-  applySheetStyle(summarySheet, { headerColor: '7A4A00' });
-
-  const formatSheet = workbook.addWorksheet('4.면접관양식');
-  formatSheet.columns = [
-    { header: '원본폴더', key: 'sourceFolder', width: 22 },
-    { header: '원본상대경로', key: 'sourceRelativePath', width: 46 },
-    { header: 'No.', key: 'no', width: 8 },
-    { header: '이름', key: 'name', width: 12 },
-    { header: '성별', key: 'gender', width: 10 },
-    { header: '생년월일', key: 'birth', width: 20 },
-    { header: '연령', key: 'age', width: 10 },
-    { header: '학력', key: 'education', width: 42 },
-    { header: '주요경력(일부)', key: 'career', width: 58 },
-    { header: '평가경력', key: 'evaluationCareer', width: 36 },
-    { header: '비고', key: 'notes', width: 28 },
-    { header: '분야', key: 'field', width: 24 },
-    { header: '연락처', key: 'phone', width: 18 },
-    { header: '이메일주소', key: 'email', width: 28 },
-  ];
-
-  formatSheet.addRow({
-    sourceFolder: '원본 폴더 확인용',
-    sourceRelativePath: '원본 상대경로 확인용',
-    no: '번호작성',
-    name: '이름작성',
-    gender: '남 or 여 작성',
-    birth: 'yyyy-mm-dd 입력 시 yyyy년 mm월 dd일로 변환',
-    age: '생년월일 입력 시 자동계산',
-    education: '● 박사\n● 석사\n● 학사',
-    career: '최대 4줄\n現) 소속 직위 (yyyy.mm~현재)\n前) 주요경력 소속 최종직위 (yyyy.mm~yyyy.mm)',
-    evaluationCareer: '- 서류, 면접 구분\n- 중복된 항목 삭제',
-    notes: '- 특이사항 기재\n- 중요 전달사항 없는 경우 공란',
-    field: '',
-    phone: '연락처',
-    email: '이메일주소',
-  });
-
-  formatSheet.addRow({
-    sourceFolder: '예시 폴더',
-    sourceRelativePath: '예시폴더/홍길동_프로필.pptx',
-    no: '예시',
-    name: '홍길동',
-    gender: '남',
-    birth: '1966년 8월 5일',
-    age: 60,
-    education: '● 한국대학교 경영학 박사 (인사관리전공)\n● 한국대학교 경영학 석사 (인사관리전공)\n● 대한대학교 경영학 학사',
-    career: '現) 서울대학교 경제학부 교수 (2020.03~현재)\n前) 서강대학교 경제학부 조교수 (2018.03~2019.12)\n前) KDB산업은행 기업금융부문 부장 (2007.03~2018.02)',
-    evaluationCareer: '[서류] 대구시설관리공단, 한국대학교, 강남문화재단\n[면접] KB국민은행, 한국산업은행, 한국벤처투자 등 다수',
-    notes: '-',
-    field: '',
-    phone: '010-1234-5678',
-    email: 'sample@example.com',
-  });
-
-  results.forEach((row, index) => {
-    const name = normalizeText(row.name);
-    const gender = normalizeText(row.gender);
-    const expertise = normalizeText(row.expertise);
-
-    formatSheet.addRow({
-      sourceFolder: row.sourceFolder || '',
-      sourceRelativePath: row.sourceRelativePath || '',
-      no: index + 1,
-      name: name === EMPTY_VALUE ? '' : name,
-      gender: gender === EMPTY_VALUE ? '' : gender,
-      birth: formatBirthForTemplate(row.birth),
-      age: formatAgeForTemplate(row.age),
-      education: formatEducationForTemplate(row.educationDetails, row.education),
-      career: formatCareerForTemplate(row),
-      evaluationCareer: formatEvaluationCareerForTemplate(row),
-      notes: '',
-      field: expertise === EMPTY_VALUE ? '' : expertise,
-      phone: row.phone === EMPTY_VALUE ? '' : row.phone,
-      email: row.email === EMPTY_VALUE ? '' : row.email,
-    });
-  });
-
-  formatSheet.eachRow((row, rowNumber) => {
-    row.height = rowNumber <= 3 ? 48 : 72;
-  });
-  applySheetStyle(formatSheet, { headerColor: '4C4F57' });
-
-  const ibkSheet = workbook.addWorksheet('5.IBK기업은행');
-  ibkSheet.columns = [
-    { header: '연번', key: 'no', width: 8 },
-    { header: '분야', key: 'field', width: 14 },
-    { header: '성명', key: 'name', width: 14 },
-    { header: '선정', key: 'selected', width: 10 },
-    { header: '성별', key: 'gender', width: 10 },
-    { header: '최종학력(전공)', key: 'education', width: 36 },
-    { header: '현재 소속', key: 'currentAffiliation', width: 34 },
-    { header: '이전 경력', key: 'previousCareer', width: 42 },
-    { header: '채용 관련 활동 경험', key: 'recruitmentExperience', width: 54 },
-    { header: '생년월일', key: 'birth', width: 16 },
-    { header: 'IBK참여이력', key: 'ibkHistory', width: 18 },
-    { header: '연락처', key: 'phone', width: 18 },
-  ];
-
-  results.forEach((row, index) => {
-    const inserted = ibkSheet.addRow({
-      no: index + 1,
-      field: '',
-      name: row.name === EMPTY_VALUE ? '' : row.name,
-      selected: '',
-      gender: row.gender === EMPTY_VALUE ? '' : row.gender,
-      education: row.education === EMPTY_VALUE ? '' : row.education,
-      currentAffiliation: formatIbkCurrentAffiliation(row),
-      previousCareer: formatIbkPreviousCareer(row),
-      recruitmentExperience: formatEvaluationCareerForTemplate(row),
-      birth: row.birth === EMPTY_VALUE ? '' : formatBirthForTemplate(row.birth),
-      ibkHistory: '',
-      phone: row.phone === EMPTY_VALUE ? '' : row.phone,
-    });
-
-    inserted.height = Math.min(
-      120,
-      30 + (getLineCount(inserted.getCell('recruitmentExperience').value) - 1) * 18
-    );
-  });
-
-  applySheetStyle(ibkSheet, { headerColor: '2E3440' });
-  ['no', 'field', 'name', 'selected', 'gender', 'birth', 'ibkHistory', 'phone'].forEach((key) => {
-    ibkSheet.getColumn(key).alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
-  });
-
-  return workbook;
-};
-
-const downloadWorkbook = async (files, results) => {
-  const workbook = await buildWorkbook(files, results);
+const downloadWorkbook = async (results) => {
+  const workbook = await buildProfileWorkbook(results);
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob(
     [buffer],
@@ -490,7 +162,7 @@ function App() {
 
     setIsDownloading(true);
     try {
-      await downloadWorkbook(files, results);
+      await downloadWorkbook(results);
     } finally {
       setIsDownloading(false);
     }
@@ -527,8 +199,8 @@ function App() {
       </div>
 
       <div className="guide-box">
-        <strong>이번 저장 형식 개선</strong><br />
-        학력상세 / 경력상세 컬럼을 추가하고, 엑셀에서 줄바꿈·열너비·헤더색·필터를 적용합니다.
+        <strong>Excel 저장 양식</strong><br />
+        프로필 요약과 IBK기업은행 양식으로 저장합니다.
       </div>
 
       <div className="upload-options">
@@ -583,6 +255,33 @@ function App() {
             </div>
           </div>
 
+          <div className="action-row">
+            <button className="btn-primary" disabled={isProcessing} onClick={startProcessing}>
+              {isProcessing ? '추출 중...' : '업데이트 버전 실행'}
+            </button>
+            <button
+              className="btn-secondary"
+              disabled={!results.length || isProcessing || isDownloading}
+              onClick={handleDownload}
+            >
+              {isDownloading ? 'Excel 생성 중...' : '예쁘게 Excel 다운로드'}
+            </button>
+            <button className="btn-secondary" disabled={isProcessing || isDownloading} onClick={clearAll}>
+              전체 초기화
+            </button>
+          </div>
+
+          {isProcessing && (
+            <div className="progress-wrap">
+              <div style={{ marginBottom: '0.5rem', color: 'var(--text-muted)' }}>
+                {currentIdx + 1} / {files.length} · {files[currentIdx]?.file?.name || '분석 중'}
+              </div>
+              <div className="progress-bar-container">
+                <div className="progress-bar" style={{ width: `${progress}%` }} />
+              </div>
+            </div>
+          )}
+
           <div className="file-list">
             {files.map((upload, index) => {
               const status = index < results.length
@@ -618,33 +317,6 @@ function App() {
               );
             })}
           </div>
-
-          <div className="action-row" style={{ marginTop: '1rem' }}>
-            <button className="btn-primary" disabled={isProcessing} onClick={startProcessing}>
-              {isProcessing ? '추출 중...' : '업데이트 버전 실행'}
-            </button>
-            <button
-              className="btn-secondary"
-              disabled={!results.length || isProcessing || isDownloading}
-              onClick={handleDownload}
-            >
-              {isDownloading ? 'Excel 생성 중...' : '예쁘게 Excel 다운로드'}
-            </button>
-            <button className="btn-secondary" disabled={isProcessing || isDownloading} onClick={clearAll}>
-              전체 초기화
-            </button>
-          </div>
-
-          {isProcessing && (
-            <div className="progress-wrap">
-              <div style={{ marginBottom: '0.5rem', color: 'var(--text-muted)' }}>
-                {currentIdx + 1} / {files.length} · {files[currentIdx]?.file?.name || '분석 중'}
-              </div>
-              <div className="progress-bar-container">
-                <div className="progress-bar" style={{ width: `${progress}%` }} />
-              </div>
-            </div>
-          )}
 
           {results.length > 0 && (
             <div className="data-preview">
